@@ -20,7 +20,7 @@ const METRICS_CACHE_TTL = 3600000; // 1 час
 const METRICS_CATALOG = {
   // P&L
   revenue: { tags: ['Revenues', 'RevenueFromContractWithCustomerExcludingAssessedTax', 'SalesRevenueNet', 'TotalRevenues'], category: 'P&L', ttm: 'sum', ru: 'Выручка' },
-  cogs: { tags: ['CostOfGoodsAndServicesSold', 'CostOfRevenue', 'CostOfSales'], category: 'P&L', ttm: 'sum', ru: 'Себестоимость' },
+  cogs: { tags: ['CostOfGoodsAndServicesSold', 'CostOfRevenue', 'CostOfSales', 'CostsAndExpenses', 'CostOfServices'], category: 'P&L', ttm: 'sum', ru: 'Себестоимость' },
   grossprofit: { tags: ['GrossProfit'], category: 'P&L', ttm: 'sum', ru: 'Валовая прибыль' },
   rd: { tags: ['ResearchAndDevelopmentExpense', 'ResearchAndDevelopmentExpenseExcludingAcquiredInProcessResearchAndDevelopment'], category: 'P&L', ttm: 'sum', ru: 'R&D расходы' },
   sga: { tags: ['SellingGeneralAndAdministrativeExpense'], category: 'P&L', ttm: 'sum', ru: 'SG&A расходы' },
@@ -180,12 +180,10 @@ function getQuarterFromDate(dateStr) {
 function buildFilingUrl(cik, accessionNumber, primaryDocument) {
   const cleanCik = cik.replace(/^0+/, '');
   const cleanAcc = accessionNumber.replace(/-/g, '');
-  return `https://www.sec.gov/Archives/edgar/data/${cleanCik}/${cleanAcc}/${primaryDocument}`;
-}
-
-function buildXbrlViewerUrl(cik, accessionNumber) {
-  const cleanCik = parseInt(cik);
-  return `https://www.sec.gov/cgi-bin/viewer?action=view&cik=${cleanCik}&accession_number=${accessionNumber}&xbrl_type=v`;
+  if (primaryDocument) {
+    return `https://www.sec.gov/Archives/edgar/data/${cleanCik}/${cleanAcc}/${primaryDocument}`;
+  }
+  return `https://www.sec.gov/Archives/edgar/data/${cleanCik}/${cleanAcc}/`;
 }
 
 // ============ FETCH С RETRY ============
@@ -338,7 +336,6 @@ function getReportByOrder(recent, reportType, n, field) {
     accessionNumber: accessionNumber,
     primaryDocument: primaryDocument,
     url: buildFilingUrl(cik, accessionNumber, primaryDocument),
-    xbrlViewerUrl: buildXbrlViewerUrl(cik, accessionNumber),
     year: parseInt(filingDate?.substring(0, 4)),
     quarter: reportType === '10-Q' ? getQuarterFromDate(filingDate) : null
   };
@@ -373,7 +370,6 @@ function getReportByDate(recent, reportType, year, quarter, field) {
           accessionNumber: accessionNumbers[i],
           primaryDocument: primaryDocuments[i],
           url: buildFilingUrl(cik, accessionNumbers[i], primaryDocuments[i]),
-          xbrlViewerUrl: buildXbrlViewerUrl(cik, accessionNumbers[i]),
           year: year,
           quarter: null
         };
@@ -389,7 +385,6 @@ function getReportByDate(recent, reportType, year, quarter, field) {
           accessionNumber: accessionNumbers[i],
           primaryDocument: primaryDocuments[i],
           url: buildFilingUrl(cik, accessionNumbers[i], primaryDocuments[i]),
-          xbrlViewerUrl: buildXbrlViewerUrl(cik, accessionNumbers[i]),
           year: year,
           quarter: reportQuarter
         };
@@ -401,7 +396,9 @@ function getReportByDate(recent, reportType, year, quarter, field) {
   return null;
 }
 
-// ============ ENDPOINT: КАТАЛОГ МЕТРИК ============
+// ============ ENDPOINTS ============
+
+// Каталог метрик
 app.get('/catalog', (req, res) => {
   const list = [];
   for (const [key, val] of Object.entries(METRICS_CATALOG)) {
@@ -416,7 +413,7 @@ app.get('/catalog', (req, res) => {
   res.json({ metrics: list, count: list.length });
 });
 
-// ============ ENDPOINT: ВАЛИДАЦИЯ МЕТРИКИ ============
+// Валидация метрики
 app.get('/validate/:metric', (req, res) => {
   const resolved = resolveMetric(req.params.metric);
   if (!resolved) {
@@ -434,7 +431,7 @@ app.get('/validate/:metric', (req, res) => {
   });
 });
 
-// ============ ENDPOINT: МЕТРИКИ (ОСНОВНОЙ) ============
+// Основной эндпоинт для метрик
 app.get('/metrics/:ticker', async (req, res) => {
   try {
     const ticker = req.params.ticker.toUpperCase();
@@ -498,7 +495,7 @@ app.get('/metrics/:ticker', async (req, res) => {
   }
 });
 
-// ============ ENDPOINT: ИНФОРМАЦИЯ О КОМПАНИИ ============
+// Информация о компании
 app.get('/info/:ticker', async (req, res) => {
   try {
     const ticker = req.params.ticker.toUpperCase();
@@ -563,7 +560,33 @@ app.get('/info/:ticker', async (req, res) => {
   }
 });
 
-// ============ ENDPOINT: ОТЧЁТЫ (ACTIONS) ============
+// Универсальный эндпоинт для submissions (работает и с тикером, и с CIK)
+app.get('/submissions/:identifier', async (req, res) => {
+  try {
+    let identifier = req.params.identifier;
+    let cik = null;
+    
+    // Если identifier — это CIK (10 цифр, возможно с ведущими нулями)
+    if (/^\d{1,10}$/.test(identifier)) {
+      cik = identifier.replace(/^0+/, '').padStart(10, '0');
+    } 
+    // Иначе считаем, что это тикер
+    else {
+      cik = await getCIK(identifier.toUpperCase());
+    }
+    
+    if (!cik) return res.status(404).json({ error: 'Тикер или CIK не найден' });
+    
+    const subData = await getSubmissions(cik);
+    if (!subData) return res.status(500).json({ error: 'Ошибка получения данных' });
+    
+    res.json(subData);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Отчёты (actions)
 app.get('/actions/reports/:ticker', async (req, res) => {
   try {
     const ticker = req.params.ticker.toUpperCase();
@@ -603,7 +626,7 @@ app.get('/actions/reports/:ticker', async (req, res) => {
   }
 });
 
-// ============ ENDPOINT: COMPANY FACTS (ПРЯМОЙ ДОСТУП) ============
+// Прямой доступ к companyfacts по тикеру
 app.get('/companyfacts/:ticker', async (req, res) => {
   try {
     const ticker = req.params.ticker.toUpperCase();
@@ -614,30 +637,12 @@ app.get('/companyfacts/:ticker', async (req, res) => {
     if (!factsData) return res.status(500).json({ error: 'Ошибка получения данных' });
     
     res.json(factsData);
-    
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 });
 
-// ============ ENDPOINT: SUBMISSIONS (ПРЯМОЙ ДОСТУП) ============
-app.get('/submissions/:ticker', async (req, res) => {
-  try {
-    const ticker = req.params.ticker.toUpperCase();
-    const cik = await getCIK(ticker);
-    if (!cik) return res.status(404).json({ error: 'Тикер не найден' });
-    
-    const subData = await getSubmissions(cik);
-    if (!subData) return res.status(500).json({ error: 'Ошибка получения данных' });
-    
-    res.json(subData);
-    
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// ============ ENDPOINT: COMPANY TICKERS (ПРЯМОЙ ДОСТУП) ============
+// Прямой доступ к company-tickers
 app.get('/company-tickers', async (req, res) => {
   try {
     const response = await fetchWithRetry(`${SEC_BASE}/files/company_tickers.json`, {
@@ -645,13 +650,12 @@ app.get('/company-tickers', async (req, res) => {
     });
     const data = await response.json();
     res.json(data);
-    
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 });
 
-// ============ ENDPOINT: HEALTH CHECK ============
+// Health check
 app.get('/ping', (req, res) => {
   res.json({ status: 'alive', timestamp: new Date().toISOString() });
 });
@@ -663,12 +667,11 @@ app.listen(PORT, () => {
   console.log(`Endpoints available:`);
   console.log(`  GET /catalog`);
   console.log(`  GET /validate/:metric`);
-  console.log(`  GET /metrics/:ticker?metrics=...&year=...&quarter=...&scale=...`);
+  console.log(`  GET /metrics/:ticker`);
   console.log(`  GET /info/:ticker`);
-  console.log(`  GET /actions/reports/:ticker?type=...&mode=last&n=...&field=...`);
-  console.log(`  GET /actions/reports/:ticker?type=...&mode=date&year=...&quarter=...&field=...`);
+  console.log(`  GET /submissions/:identifier  (тикер или CIK)`);
+  console.log(`  GET /actions/reports/:ticker`);
   console.log(`  GET /companyfacts/:ticker`);
-  console.log(`  GET /submissions/:ticker`);
   console.log(`  GET /company-tickers`);
   console.log(`  GET /ping`);
 });
