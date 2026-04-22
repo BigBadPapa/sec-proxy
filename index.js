@@ -19,7 +19,7 @@ const METRICS_CACHE_TTL = 3600000; // 1 час
 // ============ ПОЛНЫЙ СПРАВОЧНИК МЕТРИК ============
 const METRICS_CATALOG = {
   // P&L
-  revenue: { tags: ['Revenues'], category: 'P&L', ttm: 'sum', ru: 'Выручка' },
+  revenue: { tags: ['RevenueFromContractWithCustomerExcludingAssessedTax', 'Revenues', 'SalesRevenueNet', 'TotalRevenues'], category: 'P&L', ttm: 'sum', ru: 'Выручка' },
   cogs: { tags: ['CostOfGoodsAndServicesSold', 'CostOfRevenue', 'CostOfSales', 'CostsAndExpenses', 'CostOfServices'], category: 'P&L', ttm: 'sum', ru: 'Себестоимость' },
   grossprofit: { tags: ['GrossProfit'], category: 'P&L', ttm: 'sum', ru: 'Валовая прибыль' },
   rd: { tags: ['ResearchAndDevelopmentExpense', 'ResearchAndDevelopmentExpenseExcludingAcquiredInProcessResearchAndDevelopment'], category: 'P&L', ttm: 'sum', ru: 'R&D расходы' },
@@ -256,6 +256,7 @@ function getTTMValue(sortedValues, metricName) {
   return last4.reduce((acc, v) => acc + v.val, 0);
 }
 
+// ============ ОСНОВНАЯ ФУНКЦИЯ ПОИСКА ЗНАЧЕНИЯ ============
 function getMetricValue(factsData, metric, year, quarter, scale) {
   const catalog = METRICS_CATALOG[metric];
   if (!catalog) return null;
@@ -263,17 +264,13 @@ function getMetricValue(factsData, metric, year, quarter, scale) {
   const usGaap = factsData?.facts?.['us-gaap'];
   if (!usGaap) return null;
   
-  function getMetricValue(factsData, metric, year, quarter, scale) {
-  const catalog = METRICS_CATALOG[metric];
-  if (!catalog) return null;
-  
-  const usGaap = factsData?.facts?.['us-gaap'];
-  if (!usGaap) return null;
-
+  // ========== ЛОГИРОВАНИЕ ДЛЯ ОТЛАДКИ ==========
   console.log('=== DEBUG getMetricValue ===');
-  console.log('Looking for metric:', metric);
-  console.log('Tags to try:', catalog.tags);
-  console.log('Available tags in us-gaap (first 20):', Object.keys(usGaap).slice(0, 20));
+  console.log('metric:', metric);
+  console.log('catalog.tags:', catalog.tags);
+  console.log('us-gaap keys sample:', Object.keys(usGaap).slice(0, 30));
+  console.log('Test RevenueFromContract...:', usGaap['RevenueFromContractWithCustomerExcludingAssessedTax'] ? 'FOUND' : 'NOT FOUND');
+  // ========== КОНЕЦ ЛОГИРОВАНИЯ ==========
   
   let tagData = null;
   for (const tag of catalog.tags) {
@@ -410,7 +407,6 @@ function getReportByDate(recent, reportType, year, quarter, field) {
 
 // ============ ENDPOINTS ============
 
-// Каталог метрик
 app.get('/catalog', (req, res) => {
   const list = [];
   for (const [key, val] of Object.entries(METRICS_CATALOG)) {
@@ -425,7 +421,6 @@ app.get('/catalog', (req, res) => {
   res.json({ metrics: list, count: list.length });
 });
 
-// Валидация метрики
 app.get('/validate/:metric', (req, res) => {
   const resolved = resolveMetric(req.params.metric);
   if (!resolved) {
@@ -443,7 +438,6 @@ app.get('/validate/:metric', (req, res) => {
   });
 });
 
-// Основной эндпоинт для метрик
 app.get('/metrics/:ticker', async (req, res) => {
   try {
     const ticker = req.params.ticker.toUpperCase();
@@ -507,7 +501,6 @@ app.get('/metrics/:ticker', async (req, res) => {
   }
 });
 
-// Информация о компании
 app.get('/info/:ticker', async (req, res) => {
   try {
     const ticker = req.params.ticker.toUpperCase();
@@ -572,18 +565,14 @@ app.get('/info/:ticker', async (req, res) => {
   }
 });
 
-// Универсальный эндпоинт для submissions (работает и с тикером, и с CIK)
 app.get('/submissions/:identifier', async (req, res) => {
   try {
     let identifier = req.params.identifier;
     let cik = null;
     
-    // Если identifier — это CIK (10 цифр, возможно с ведущими нулями)
     if (/^\d{1,10}$/.test(identifier)) {
       cik = identifier.replace(/^0+/, '').padStart(10, '0');
-    } 
-    // Иначе считаем, что это тикер
-    else {
+    } else {
       cik = await getCIK(identifier.toUpperCase());
     }
     
@@ -598,7 +587,6 @@ app.get('/submissions/:identifier', async (req, res) => {
   }
 });
 
-// Отчёты (actions)
 app.get('/actions/reports/:ticker', async (req, res) => {
   try {
     const ticker = req.params.ticker.toUpperCase();
@@ -638,7 +626,6 @@ app.get('/actions/reports/:ticker', async (req, res) => {
   }
 });
 
-// Прямой доступ к companyfacts по тикеру
 app.get('/companyfacts/:ticker', async (req, res) => {
   try {
     const ticker = req.params.ticker.toUpperCase();
@@ -654,7 +641,6 @@ app.get('/companyfacts/:ticker', async (req, res) => {
   }
 });
 
-// Прямой доступ к company-tickers
 app.get('/company-tickers', async (req, res) => {
   try {
     const response = await fetchWithRetry(`${SEC_BASE}/files/company_tickers.json`, {
@@ -667,12 +653,10 @@ app.get('/company-tickers', async (req, res) => {
   }
 });
 
-// Health check
 app.get('/ping', (req, res) => {
   res.json({ status: 'alive', timestamp: new Date().toISOString() });
 });
 
-// ============ ЗАПУСК СЕРВЕРА ============
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`SEC Proxy server running on port ${PORT}`);
@@ -681,7 +665,7 @@ app.listen(PORT, () => {
   console.log(`  GET /validate/:metric`);
   console.log(`  GET /metrics/:ticker`);
   console.log(`  GET /info/:ticker`);
-  console.log(`  GET /submissions/:identifier  (тикер или CIK)`);
+  console.log(`  GET /submissions/:identifier`);
   console.log(`  GET /actions/reports/:ticker`);
   console.log(`  GET /companyfacts/:ticker`);
   console.log(`  GET /company-tickers`);
