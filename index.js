@@ -269,24 +269,13 @@ function getMetricValue(factsData, metric, year, quarter, scale) {
   
   const usGaap = factsData?.facts?.['us-gaap'];
   if (!usGaap) return null;
-  
-  // ========== НАЧАЛО ВСТАВКИ ==========
+
   console.log('=== DEBUG getMetricValue ===');
   console.log('Looking for metric:', metric);
   console.log('Tags to try:', catalog.tags);
   console.log('Available tags in us-gaap (first 20):', Object.keys(usGaap).slice(0, 20));
-  // ========== КОНЕЦ ВСТАВКИ ==========
   
   let tagData = null;
-  for (const tag of catalog.tags) {
-    if (usGaap[tag]) {
-      tagData = usGaap[tag];
-      break;
-    }
-  }
-  
-  // ... остальной код
-}
   for (const tag of catalog.tags) {
     if (usGaap[tag]) {
       tagData = usGaap[tag];
