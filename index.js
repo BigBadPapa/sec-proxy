@@ -11,10 +11,10 @@ const DATA_BASE = 'https://data.sec.gov';
 // Кэши
 let tickersCache = null;
 let tickersCacheTime = 0;
-const TICKERS_CACHE_TTL = 3600000; // 1 час
+const TICKERS_CACHE_TTL = 5; // 1 час
 
 const metricsCache = new Map();
-const METRICS_CACHE_TTL = 10; // 1 час
+const METRICS_CACHE_TTL = 5; // 1 час
 
 // ============ ПОЛНЫЙ СПРАВОЧНИК МЕТРИК ============
 const METRICS_CATALOG = {
