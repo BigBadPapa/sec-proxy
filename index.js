@@ -81,6 +81,8 @@ const METRICS_CATALOG = {
   totalequity: { tags: ['StockholdersEquity', 'PartnersCapital', 'MembersEquity', 'Equity'], category: 'Equity', ttm: 'last', ru: 'ВСЕГО КАПИТАЛ' },
 
   // Cash Flow
+  ocf: { tags: ['NetCashProvidedByUsedInOperatingActivities'], category: 'CashFlow', ttm: 'sum', ru: 'OCF' },
+  ocf1: { tags: ['CashGeneratedFromOperatingActivities'], category: 'CashFlow', ttm: 'sum', ru: 'OCF' },
   netincomecf: { tags: ['NetIncomeLoss'], category: 'CashFlow', ttm: 'sum', ru: 'Чистая прибыль (для CF)' },
   da: { tags: ['DepreciationDepletionAndAmortization', 'DepreciationAndAmortization'], category: 'CashFlow', ttm: 'sum', ru: 'Амортизация и износ' },
   stockbasedcompensation: { tags: ['ShareBasedCompensation'], category: 'CashFlow', ttm: 'sum', ru: 'Вознаграждение акциями' },
@@ -90,7 +92,6 @@ const METRICS_CATALOG = {
   inventorychange: { tags: ['IncreaseDecreaseInInventories'], category: 'CashFlow', ttm: 'sum', ru: 'Изменение запасов' },
   accountspayablechange: { tags: ['IncreaseDecreaseInAccountsPayable'], category: 'CashFlow', ttm: 'sum', ru: 'Изменение кредиторки' },
   otheroperatingactivities: { tags: ['OtherOperatingActivities'], category: 'CashFlow', ttm: 'sum', ru: 'Прочие операционные' },
-  operatingcashflow: { tags: ['NetCashProvidedByUsedInOperatingActivities', 'CashGeneratedFromOperatingActivities'], category: 'CashFlow', ttm: 'sum', ru: 'OCF' },
   capex: { tags: ['PaymentsToAcquirePropertyPlantAndEquipment', 'CapitalExpendituresIncurredButNotYetPaid', 'PurchaseOfPropertyPlantAndEquipment'], category: 'CashFlow', ttm: 'sum', ru: 'Капекс' },
   acquisitions: { tags: ['PaymentsToAcquireBusinessesNetOfCashAcquired', 'AcquisitionsNetOfCashAcquired'], category: 'CashFlow', ttm: 'sum', ru: 'Приобретения' },
   purchaseofinvestments: { tags: ['PaymentsToAcquireInvestments'], category: 'CashFlow', ttm: 'sum', ru: 'Покупка инвестиций' },
