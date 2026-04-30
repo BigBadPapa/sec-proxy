@@ -82,9 +82,7 @@ const METRICS_CATALOG = {
 
   // Cash Flow
   ocf: { tags: ['NetCashProvidedByUsedInOperatingActivities'], category: 'CashFlow', ttm: 'sum', ru: 'OCF' },
-
   icf: { tags: ['NetCashProvidedByUsedInInvestingActivities'], category: 'CashFlow', ttm: 'sum', ru: 'ICF' },
-
   fcf: { tags: ['NetCashProvidedByUsedInFinancingActivities'], category: 'CashFlow', ttm: 'sum', ru: 'FCF' },
   
   netincomecf: { tags: ['NetIncomeLoss'], category: 'CashFlow', ttm: 'sum', ru: 'Чистая прибыль (для CF)' },
