@@ -86,7 +86,7 @@ const METRICS_CATALOG = {
   fcf: { tags: ['NetCashProvidedByUsedInFinancingActivities'], category: 'CashFlow', ttm: 'sum', ru: 'FCF' },
   
   netincomecf: { tags: ['NetIncomeLoss'], category: 'CashFlow', ttm: 'sum', ru: 'Чистая прибыль (для CF)' },
-  da: { tags: ['DepreciationDepletionAndAmortization', 'DepreciationAndAmortization'], category: 'CashFlow', ttm: 'sum', ru: 'Амортизация и износ' },
+  da: { tags: ['DepreciationDepletionAndAmortization', 'DepreciationAndAmortization','DepreciationAmortizationAndOther'], category: 'CashFlow', ttm: 'sum', ru: 'Амортизация и износ' },
   stockbasedcompensation: { tags: ['ShareBasedCompensation'], category: 'CashFlow', ttm: 'sum', ru: 'Вознаграждение акциями' },
   deferredtax: { tags: ['DeferredIncomeTaxExpenseBenefit'], category: 'CashFlow', ttm: 'sum', ru: 'Отложенные налоги' },
   workingcapitalchanges: { tags: ['IncreaseDecreaseInOperatingCapital'], category: 'CashFlow', ttm: 'sum', ru: 'Изменение оборотного капитала' },
