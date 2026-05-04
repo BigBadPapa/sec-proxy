@@ -334,19 +334,33 @@ function getTTMValue(sortedValues, metricName, allValues) {
   }
   
   // Для P&L и Cash Flow
-  // Пытаемся найти 4q (YTD за 12 месяцев) или 10-K
-  const annualYTD = sortedValues.find(v => 
-    (v.form === '10-K') || 
-    (v.fp === 'Q4' && getDaysDiff(v.start, v.end) > 100)
-  );
+  // 1. Собираем все квартальные записи за 3 месяца (не YTD)
+  const quarterlyOnly = allValues.filter(v => {
+    if (v.form !== '10-Q') return false;
+    if (v.fp === 'FY') return false;
+    const days = getDaysDiff(v.start, v.end);
+    return days >= 80 && days <= 100;
+  });
   
-  if (annualYTD) return annualYTD.val;
+  // 2. Сортируем по дате окончания (свежие первые)
+  const sortedQuarterly = quarterlyOnly.sort((a, b) => new Date(b.end) - new Date(a.end));
   
-  // Если нет — суммируем последние доступные кварталы
-  const quarterly = sortedValues.filter(v => v.fp && v.fp !== 'FY');
-  const last4 = quarterly.slice(0, 4);
-  if (last4.length === 0) return null;
-  return last4.reduce((acc, v) => acc + v.val, 0);
+  // 3. Берём последние 4 квартала
+  const last4 = sortedQuarterly.slice(0, 4);
+  
+  // 4. Если есть 4 квартала — суммируем
+  if (last4.length === 4) {
+    return last4.reduce((acc, v) => acc + v.val, 0);
+  }
+  
+  // 5. Если меньше 4 — возвращаем последний 10-K
+  const last10K = allValues.find(v => v.form === '10-K');
+  if (last10K) {
+    return last10K.val;
+  }
+  
+  // 6. Если ничего нет — null
+  return null;
 }
 
 // ============ ОСНОВНАЯ ФУНКЦИЯ ПОИСКА ЗНАЧЕНИЯ ============
