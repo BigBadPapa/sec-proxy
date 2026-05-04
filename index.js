@@ -195,6 +195,80 @@ function buildFilingUrl(cik, accessionNumber, primaryDocument) {
   return `https://www.sec.gov/Archives/edgar/data/${cleanCik}/${cleanAcc}/`;
 }
 
+// ============ НОВЫЕ ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ДЛЯ КВАРТАЛОВ ============
+
+function parseQuarterString(quarterStr) {
+  if (!quarterStr || typeof quarterStr !== 'string') return null;
+  const lower = quarterStr.toLowerCase().trim();
+  
+  // q1, q2, q3, q4
+  if (lower === 'q1') return { type: 'quarter', num: 1 };
+  if (lower === 'q2') return { type: 'quarter', num: 2 };
+  if (lower === 'q3') return { type: 'quarter', num: 3 };
+  if (lower === 'q4') return { type: 'quarter', num: 4 };
+  
+  // 1q, 2q, 3q, 4q
+  if (lower === '1q') return { type: 'ytd', num: 1 };
+  if (lower === '2q') return { type: 'ytd', num: 2 };
+  if (lower === '3q') return { type: 'ytd', num: 3 };
+  if (lower === '4q') return { type: 'ytd', num: 4 };
+  
+  return null;
+}
+
+function getDaysDiff(startStr, endStr) {
+  const start = new Date(startStr);
+  const end = new Date(endStr);
+  return (end - start) / (1000 * 60 * 60 * 24);
+}
+
+function findYTDValue(values, year, quarterNum) {
+  // YTD запись: fp = Q{quarterNum}, start = начало финансового года
+  const targetFp = `Q${quarterNum}`;
+  const candidates = values.filter(v => v.fy === year && v.fp === targetFp && v.form === '10-Q');
+  
+  if (candidates.length === 0) return null;
+  
+  // Ищем запись с максимальной длительностью (YTD)
+  let bestMatch = null;
+  let maxDays = 0;
+  
+  for (const v of candidates) {
+    const days = getDaysDiff(v.start, v.end);
+    if (days > maxDays) {
+      maxDays = days;
+      bestMatch = v;
+    }
+  }
+  
+  return bestMatch ? bestMatch.val : null;
+}
+
+function findQuarterOnlyValue(values, year, quarterNum) {
+  // Запись только за квартал (3 месяца)
+  const targetFp = `Q${quarterNum}`;
+  const candidates = values.filter(v => v.fy === year && v.fp === targetFp && v.form === '10-Q');
+  
+  if (candidates.length === 0) return null;
+  
+  // Ищем запись с длительностью ~90 дней
+  for (const v of candidates) {
+    const days = getDaysDiff(v.start, v.end);
+    if (days >= 80 && days <= 100) {
+      return v.val;
+    }
+  }
+  
+  return null;
+}
+
+function calculateQ4Value(values, year, ytdQ3Value) {
+  // q4 = 10-K за год − 3q (YTD за 9 месяцев)
+  const annual10K = values.find(v => v.fy === year && v.form === '10-K');
+  if (!annual10K || ytdQ3Value === null) return null;
+  return annual10K.val - ytdQ3Value;
+}
+
 // ============ FETCH С RETRY ============
 async function fetchWithRetry(url, options, maxRetries = 3) {
   for (let i = 0; i < maxRetries; i++) {
@@ -251,7 +325,7 @@ async function getCompanyFacts(cik) {
 }
 
 // ============ ЛОГИКА ПОИСКА МЕТРИК ============
-function getTTMValue(sortedValues, metricName) {
+function getTTMValue(sortedValues, metricName, allValues) {
   const catalog = METRICS_CATALOG[metricName];
   const ttmType = catalog?.ttm || 'sum';
   
@@ -259,6 +333,16 @@ function getTTMValue(sortedValues, metricName) {
     return sortedValues[0]?.val || null;
   }
   
+  // Для P&L и Cash Flow
+  // Пытаемся найти 4q (YTD за 12 месяцев) или 10-K
+  const annualYTD = sortedValues.find(v => 
+    (v.form === '10-K') || 
+    (v.fp === 'Q4' && getDaysDiff(v.start, v.end) > 100)
+  );
+  
+  if (annualYTD) return annualYTD.val;
+  
+  // Если нет — суммируем последние доступные кварталы
   const quarterly = sortedValues.filter(v => v.fp && v.fp !== 'FY');
   const last4 = quarterly.slice(0, 4);
   if (last4.length === 0) return null;
@@ -266,20 +350,12 @@ function getTTMValue(sortedValues, metricName) {
 }
 
 // ============ ОСНОВНАЯ ФУНКЦИЯ ПОИСКА ЗНАЧЕНИЯ ============
-function getMetricValue(factsData, metric, year, quarter, scale) {
+function getMetricValue(factsData, metric, year, quarterParam, scale) {
   const catalog = METRICS_CATALOG[metric];
   if (!catalog) return null;
   
   const usGaap = factsData?.facts?.['us-gaap'];
   if (!usGaap) return null;
-  
-  // ========== ЛОГИРОВАНИЕ ДЛЯ ОТЛАДКИ ==========
-  console.log('=== DEBUG getMetricValue ===');
-  console.log('metric:', metric);
-  console.log('catalog.tags:', catalog.tags);
-  console.log('us-gaap keys sample:', Object.keys(usGaap).slice(0, 30));
-  console.log('Test RevenueFromContract...:', usGaap['RevenueFromContractWithCustomerExcludingAssessedTax'] ? 'FOUND' : 'NOT FOUND');
-  // ========== КОНЕЦ ЛОГИРОВАНИЯ ==========
   
   let tagData = null;
   for (const tag of catalog.tags) {
@@ -302,17 +378,70 @@ function getMetricValue(factsData, metric, year, quarter, scale) {
   const sorted = values.sort((a, b) => new Date(b.end) - new Date(a.end));
   
   let result = null;
+  const isBalanceMetric = catalog.ttm === 'last';
   
-  if (year === undefined && quarter === undefined) {
-    result = getTTMValue(sorted, metric);
-  } else if (quarter === undefined || quarter === 0 || quarter === null) {
+  // TTM (без года и квартала)
+  if (year === undefined && quarterParam === undefined) {
+    result = getTTMValue(sorted, metric, values);
+  }
+  // Годовой отчёт
+  else if (quarterParam === undefined || quarterParam === 0 || quarterParam === 'annual' || quarterParam === 'год') {
     const annual = sorted.find(v => v.fy === year && v.form === '10-K');
     result = annual?.val || null;
-  } else {
-    const quarterMap = { 1: 'Q1', 2: 'Q2', 3: 'Q3', 4: 'Q4' };
-    const fp = quarterMap[quarter];
-    const q = sorted.find(v => v.fy === year && v.fp === fp && v.form === '10-Q');
-    result = q?.val || null;
+  }
+  // Квартальные данные
+  else if (year !== undefined && quarterParam) {
+    const quarterInfo = parseQuarterString(quarterParam);
+    
+    if (!quarterInfo) {
+      return null;
+    }
+    
+    // Для балансовых метрик — берём последнее значение на дату
+    if (isBalanceMetric) {
+      const targetFp = `Q${quarterInfo.num}`;
+      const balanceValue = sorted.find(v => v.fy === year && v.fp === targetFp);
+      result = balanceValue?.val || null;
+    }
+    // Для P&L и Cash Flow
+    else {
+      if (quarterInfo.num === 4) {
+        // Q4 — особый случай
+        if (quarterInfo.type === 'ytd') {
+          // 4q = 10-K
+          const annual10K = sorted.find(v => v.fy === year && v.form === '10-K');
+          result = annual10K?.val || null;
+        } else {
+          // q4 = 10-K − 3q
+          const ytdQ3 = findYTDValue(values, year, 3);
+          result = calculateQ4Value(values, year, ytdQ3);
+        }
+      } else {
+        // Q1, Q2, Q3
+        if (quarterInfo.type === 'ytd') {
+          // YTD
+          result = findYTDValue(values, year, quarterInfo.num);
+        } else {
+          // Только за квартал (3 месяца)
+          result = findQuarterOnlyValue(values, year, quarterInfo.num);
+          
+          // Если нет — вычисляем через YTD
+          if (result === null) {
+            const ytdCurrent = findYTDValue(values, year, quarterInfo.num);
+            if (quarterInfo.num === 1) {
+              result = ytdCurrent;
+            } else if (ytdCurrent !== null) {
+              const ytdPrev = findYTDValue(values, year, quarterInfo.num - 1);
+              if (ytdPrev !== null) {
+                result = ytdCurrent - ytdPrev;
+              } else {
+                result = ytdCurrent;
+              }
+            }
+          }
+        }
+      }
+    }
   }
   
   return applyScale(result, scale);
@@ -451,7 +580,7 @@ app.get('/metrics/:ticker', async (req, res) => {
   try {
     const ticker = req.params.ticker.toUpperCase();
     const year = req.query.year ? parseInt(req.query.year) : undefined;
-    const quarter = req.query.quarter !== undefined ? parseInt(req.query.quarter) : undefined;
+    const quarter = req.query.quarter !== undefined ? String(req.query.quarter) : undefined;
     const scale = normalizeScale(req.query.scale);
     
     let rawMetrics = req.query.metrics || req.query.metric;
