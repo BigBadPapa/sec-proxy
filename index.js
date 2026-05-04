@@ -353,14 +353,46 @@ function getTTMValue(sortedValues, metricName, allValues) {
     return last4.reduce((acc, v) => acc + v.val, 0);
   }
   
-  // 5. Если меньше 4 — возвращаем последний 10-K
+  // 5. Если меньше 4 — используем формулу с YTD
+  // Находим последний 10-K
   const last10K = allValues.find(v => v.form === '10-K');
-  if (last10K) {
+  if (!last10K) {
+    // Нет 10-K — суммируем что есть
+    if (last4.length > 0) {
+      return last4.reduce((acc, v) => acc + v.val, 0);
+    }
+    return null;
+  }
+  
+  // Определяем, сколько кварталов текущего года есть
+  const currentYear = new Date().getFullYear();
+  const currentYearQuarterly = quarterlyOnly.filter(v => {
+    const endYear = new Date(v.end).getFullYear();
+    return endYear === currentYear;
+  });
+  
+  const currentQuarterCount = currentYearQuarterly.length;
+  
+  if (currentQuarterCount === 0) {
+    // Нет новых кварталов — возвращаем 10-K
     return last10K.val;
   }
   
-  // 6. Если ничего нет — null
-  return null;
+  // Ищем YTD за текущий год на последний доступный квартал
+  const lastQuarterNum = currentYearQuarterly[currentYearQuarterly.length - 1].fp.replace('Q', '');
+  const ytdCurrent = findYTDValue(allValues, currentYear, parseInt(lastQuarterNum));
+  
+  // Ищем YTD за прошлый год на тот же квартал
+  const ytdPrev = findYTDValue(allValues, currentYear - 1, parseInt(lastQuarterNum));
+  
+  if (ytdCurrent !== null && ytdPrev !== null) {
+    // TTM = YTD(тек) + (10-K(прошлый) − YTD(прошлый))
+    return ytdCurrent + (last10K.val - ytdPrev);
+  }
+  
+  // Если не получилось — возвращаем 10-K
+  return last10K.val;
+}
 }
 
 // ============ ОСНОВНАЯ ФУНКЦИЯ ПОИСКА ЗНАЧЕНИЯ ============
