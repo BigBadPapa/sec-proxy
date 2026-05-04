@@ -421,18 +421,17 @@ function getMetricValue(factsData, metric, year, quarterParam, scale) {
   const values = units[unitKey];
   if (!values || values.length === 0) return null;
   
-  const sorted = values.sort((a, b) => new Date(b.end) - new Date(a.end));
-  
   let result = null;
   const isBalanceMetric = catalog.ttm === 'last';
   
   // TTM (без года и квартала)
   if (year === undefined && quarterParam === undefined) {
-    result = getTTMValue(sorted, metric, values);
+    result = getTTMValue(values, metric);
   }
   // Годовой отчёт
   else if (quarterParam === undefined || quarterParam === 0 || quarterParam === 'annual' || quarterParam === 'год') {
-    const annual = sorted.find(v => v.fy === year && v.form === '10-K');
+    const candidates = values.filter(v => v.fy === year && v.form === '10-K');
+    const annual = candidates.sort((a, b) => new Date(b.filed) - new Date(a.filed))[0];
     result = annual?.val || null;
   }
   // Квартальные данные
@@ -446,7 +445,8 @@ function getMetricValue(factsData, metric, year, quarterParam, scale) {
     // Для балансовых метрик — берём последнее значение на дату
     if (isBalanceMetric) {
       const targetFp = `Q${quarterInfo.num}`;
-      const balanceValue = sorted.find(v => v.fy === year && v.fp === targetFp);
+      const candidates = values.filter(v => v.fy === year && v.fp === targetFp);
+      const balanceValue = candidates.sort((a, b) => new Date(b.end) - new Date(a.end))[0];
       result = balanceValue?.val || null;
     }
     // Для P&L и Cash Flow
@@ -455,12 +455,16 @@ function getMetricValue(factsData, metric, year, quarterParam, scale) {
         // Q4 — особый случай
         if (quarterInfo.type === 'ytd') {
           // 4q = 10-K
-          const annual10K = values.find(v => v.fy === year && v.form === '10-K');
+          const candidates = values.filter(v => v.fy === year && v.form === '10-K');
+          const annual10K = candidates.sort((a, b) => new Date(b.filed) - new Date(a.filed))[0];
           result = annual10K?.val || null;
         } else {
           // q4 = 10-K − 3q (прямое вычитание)
-          const annual10K = values.find(v => v.fy === year && v.form === '10-K');
-          const ytdQ3 = values.find(v => v.fy === year && v.fp === 'Q3' && v.form === '10-Q');
+          const annualCandidates = values.filter(v => v.fy === year && v.form === '10-K');
+          const annual10K = annualCandidates.sort((a, b) => new Date(b.filed) - new Date(a.filed))[0];
+          
+          const ytdQ3Candidates = values.filter(v => v.fy === year && v.fp === 'Q3' && v.form === '10-Q');
+          const ytdQ3 = ytdQ3Candidates.sort((a, b) => new Date(b.filed) - new Date(a.filed))[0];
           
           if (annual10K && ytdQ3) {
             result = annual10K.val - ytdQ3.val;
@@ -470,19 +474,25 @@ function getMetricValue(factsData, metric, year, quarterParam, scale) {
         }
       } else {
         // Q1, Q2, Q3
+        const targetFp = `Q${quarterInfo.num}`;
+        
         if (quarterInfo.type === 'ytd') {
-          // YTD
-          const targetFp = `Q${quarterInfo.num}`;
-          const ytdValue = values.find(v => v.fy === year && v.fp === targetFp && v.form === '10-Q');
+          // YTD — ищем по году окончания (end)
+          const candidates = values.filter(v => 
+            v.form === '10-Q' && 
+            v.fp === targetFp && 
+            new Date(v.end).getFullYear() === year
+          );
+          const ytdValue = candidates.sort((a, b) => new Date(b.filed) - new Date(a.filed))[0];
           result = ytdValue?.val || null;
         } else {
           // Только за квартал (3 месяца)
-          const targetFp = `Q${quarterInfo.num}`;
-          const quarterValue = values.find(v => 
-            v.fy === year && 
+          const candidates = values.filter(v => 
+            v.form === '10-Q' && 
             v.fp === targetFp && 
-            v.form === '10-Q'
+            new Date(v.end).getFullYear() === year
           );
+          const quarterValue = candidates.sort((a, b) => new Date(b.filed) - new Date(a.filed))[0];
           result = quarterValue?.val || null;
         }
       }
