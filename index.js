@@ -334,17 +334,11 @@ function getMetricValue(factsData, metric, year, quarterParam, scale) {
           const annual10K = candidates.sort((a, b) => new Date(b.filed) - new Date(a.filed))[0];
           result = annual10K?.val || null;
         } else {
-          // q4 = 10-K − 3q (YTD за 9 месяцев)
+          // q4 = 10-K − 3q
           const annualCandidates = values.filter(v => v.fy === year && v.form === '10-K');
           const annual10K = annualCandidates.sort((a, b) => new Date(b.filed) - new Date(a.filed))[0];
           
-          // Ищем YTD Q3 (без frame или frame не соответствует кварталу)
-          const ytdQ3Candidates = values.filter(v => 
-            v.form === '10-Q' && 
-            v.fy === year && 
-            v.fp === 'Q3' && 
-            (!v.frame || !v.frame.startsWith(`CY${year}Q`))
-          );
+          const ytdQ3Candidates = values.filter(v => v.fy === year && v.fp === 'Q3' && v.form === '10-Q');
           const ytdQ3 = ytdQ3Candidates.sort((a, b) => new Date(b.filed) - new Date(a.filed))[0];
           
           if (annual10K && ytdQ3) {
@@ -359,23 +353,32 @@ function getMetricValue(factsData, metric, year, quarterParam, scale) {
         const targetFp = `Q${quarterInfo.num}`;
         
         if (quarterInfo.type === 'quarter') {
-          // Только за квартал (3 месяца) — ищем по frame
-          const candidates = values.filter(v => 
-            v.form === '10-Q' && 
-            v.fy === year && 
-            v.fp === targetFp && 
-            v.frame === `CY${year}Q${quarterInfo.num}`
-          );
-          const quarterValue = candidates.sort((a, b) => new Date(b.filed) - new Date(a.filed))[0];
-          result = quarterValue?.val || null;
+          // q1, q2, q3
+          if (quarterInfo.num === 1) {
+            // q1: поиск по fy и fp
+            const candidates = values.filter(v => 
+              v.form === '10-Q' && 
+              v.fy === year && 
+              v.fp === targetFp
+            );
+            const quarterValue = candidates.sort((a, b) => new Date(b.filed) - new Date(a.filed))[0];
+            result = quarterValue?.val || null;
+          } else if (quarterInfo.num === 2 || quarterInfo.num === 3) {
+            // q2, q3: поиск по frame
+            const candidates = values.filter(v => 
+              v.form === '10-Q' && 
+              v.frame === `CY${year}Q${quarterInfo.num}`
+            );
+            const quarterValue = candidates.sort((a, b) => new Date(b.filed) - new Date(a.filed))[0];
+            result = quarterValue?.val || null;
+          }
         }
         else if (quarterInfo.type === 'ytd') {
-          // YTD (нарастающим итогом) — frame отсутствует или не совпадает с кварталом
+          // 1q, 2q, 3q: поиск по fy и fp
           const candidates = values.filter(v => 
             v.form === '10-Q' && 
             v.fy === year && 
-            v.fp === targetFp && 
-            (!v.frame || !v.frame.startsWith(`CY${year}Q`))
+            v.fp === targetFp
           );
           const ytdValue = candidates.sort((a, b) => new Date(b.filed) - new Date(a.filed))[0];
           result = ytdValue?.val || null;
