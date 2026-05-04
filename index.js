@@ -455,36 +455,35 @@ function getMetricValue(factsData, metric, year, quarterParam, scale) {
         // Q4 — особый случай
         if (quarterInfo.type === 'ytd') {
           // 4q = 10-K
-          const annual10K = sorted.find(v => v.fy === year && v.form === '10-K');
+          const annual10K = values.find(v => v.fy === year && v.form === '10-K');
           result = annual10K?.val || null;
         } else {
-          // q4 = 10-K − 3q
-          const ytdQ3 = findYTDValue(values, year, 3);
-          result = calculateQ4Value(values, year, ytdQ3);
+          // q4 = 10-K − 3q (прямое вычитание)
+          const annual10K = values.find(v => v.fy === year && v.form === '10-K');
+          const ytdQ3 = values.find(v => v.fy === year && v.fp === 'Q3' && v.form === '10-Q');
+          
+          if (annual10K && ytdQ3) {
+            result = annual10K.val - ytdQ3.val;
+          } else {
+            result = null;
+          }
         }
       } else {
         // Q1, Q2, Q3
         if (quarterInfo.type === 'ytd') {
           // YTD
-          result = findYTDValue(values, year, quarterInfo.num);
+          const targetFp = `Q${quarterInfo.num}`;
+          const ytdValue = values.find(v => v.fy === year && v.fp === targetFp && v.form === '10-Q');
+          result = ytdValue?.val || null;
         } else {
           // Только за квартал (3 месяца)
-          result = findQuarterOnlyValue(values, year, quarterInfo.num);
-          
-          // Если нет — вычисляем через YTD
-          if (result === null) {
-            const ytdCurrent = findYTDValue(values, year, quarterInfo.num);
-            if (quarterInfo.num === 1) {
-              result = ytdCurrent;
-            } else if (ytdCurrent !== null) {
-              const ytdPrev = findYTDValue(values, year, quarterInfo.num - 1);
-              if (ytdPrev !== null) {
-                result = ytdCurrent - ytdPrev;
-              } else {
-                result = ytdCurrent;
-              }
-            }
-          }
+          const targetFp = `Q${quarterInfo.num}`;
+          const quarterValue = values.find(v => 
+            v.fy === year && 
+            v.fp === targetFp && 
+            v.form === '10-Q'
+          );
+          result = quarterValue?.val || null;
         }
       }
     }
