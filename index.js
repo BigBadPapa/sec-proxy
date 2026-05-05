@@ -269,6 +269,111 @@ async function getCompanyFacts(cik) {
   return response.json();
 }
 
+function getTTMValue(values, metricName) {
+  const catalog = METRICS_CATALOG[metricName];
+  const ttmType = catalog?.ttm || 'sum';
+  
+  // Балансовые метрики: последнее значение
+  if (ttmType === 'last') {
+    const sorted = values.sort((a, b) => new Date(b.end) - new Date(a.end));
+    return sorted[0]?.val || null;
+  }
+  
+  // P&L и Cash Flow
+  // 1. Находим последний отчёт (10-K или 10-Q) по дате подачи
+  const allReports = values.filter(v => 
+    (v.form === '10-K' || v.form === '10-Q') && v.filed
+  );
+  const lastReport = allReports.sort((a, b) => new Date(b.filed) - new Date(a.filed))[0];
+  
+  if (!lastReport) return null;
+  
+  // 2. Если последний отчёт — 10-K, возвращаем его значение
+  if (lastReport.form === '10-K') {
+    return lastReport.val;
+  }
+  
+  // 3. Если последний отчёт — 10-Q, собираем 4 квартала подряд
+  // Определяем позицию последнего квартала
+  const lastFp = lastReport.fp; // 'Q1', 'Q2', 'Q3'
+  const lastFy = lastReport.fy;
+  const lastQuarterNum = parseInt(lastFp.substring(1));
+  
+  // Собираем 4 квартала: [Q-3, Q-2, Q-1, Q0]
+  const quarters = [];
+  for (let i = 3; i >= 0; i--) {
+    let quarterNum = lastQuarterNum - i;
+    let year = lastFy;
+    
+    if (quarterNum <= 0) {
+      quarterNum += 4;
+      year -= 1;
+    }
+    
+    quarters.push({ year: year, quarterNum: quarterNum });
+  }
+  
+  // Получаем значения для каждого квартала
+  let ttmSum = 0;
+  let validQuarters = 0;
+  
+  for (const q of quarters) {
+    // Формируем параметр квартала (например, 'q1' для 3 месяцев)
+    const quarterParam = `q${q.quarterNum}`;
+    const quarterInfo = parseQuarterString(quarterParam);
+    
+    if (!quarterInfo) continue;
+    
+    // Получаем значение для квартала
+    let value = null;
+    
+    if (quarterInfo.num === 4) {
+      // q4 = 10-K − 3q
+      const annual10K = values.find(v => v.fy === q.year && v.form === '10-K');
+      const ytdQ3Candidates = values.filter(v => 
+        v.form === '10-Q' && 
+        v.fy === q.year && 
+        v.fp === 'Q3'
+      );
+      const ytdQ3 = ytdQ3Candidates
+        .filter(v => {
+          const days = (new Date(v.end) - new Date(v.start)) / (1000 * 60 * 60 * 24);
+          return days >= 260 && days <= 280;
+        })
+        .sort((a, b) => new Date(b.start) - new Date(a.start))[0];
+      
+      if (annual10K && ytdQ3) {
+        value = annual10K.val - ytdQ3.val;
+      }
+    } else {
+      // q1, q2, q3: ищем по fy и fp
+      const targetFp = `Q${quarterInfo.num}`;
+      const candidates = values.filter(v => 
+        v.form === '10-Q' && 
+        v.fy === q.year && 
+        v.fp === targetFp
+      );
+      
+      // Фильтруем по длительности (80-100 дней для 3 месяцев)
+      const filtered = candidates.filter(v => {
+        const days = (new Date(v.end) - new Date(v.start)) / (1000 * 60 * 60 * 24);
+        return days >= 80 && days <= 100;
+      });
+      
+      const quarterValue = filtered.sort((a, b) => new Date(b.start) - new Date(a.start))[0];
+      value = quarterValue?.val || null;
+    }
+    
+    if (value !== null) {
+      ttmSum += value;
+      validQuarters++;
+    }
+  }
+  
+  // Если есть хотя бы один квартал, возвращаем сумму (может быть меньше 4)
+  return validQuarters > 0 ? ttmSum : null;
+}
+
 // ============ ОСНОВНАЯ ФУНКЦИЯ ПОИСКА ЗНАЧЕНИЯ ============
 function getMetricValue(factsData, metric, year, quarterParam, scale) {
   const catalog = METRICS_CATALOG[metric];
@@ -298,8 +403,9 @@ function getMetricValue(factsData, metric, year, quarterParam, scale) {
   let result = null;
   const isBalanceMetric = catalog.ttm === 'last';
   
+  // TTM: нет года и нет квартала
   if (year === undefined && quarterParam === undefined) {
-    return null;
+    return getTTMValue(values, metric);
   }
   
   // Годовой отчёт
