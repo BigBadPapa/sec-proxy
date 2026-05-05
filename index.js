@@ -306,7 +306,8 @@ function getMetricValue(factsData, metric, year, quarterParam, scale) {
   // Годовой отчёт
   if (quarterParam === undefined || quarterParam === 0 || quarterParam === 'annual' || quarterParam === 'год') {
     const candidates = values.filter(v => v.fy === year && v.form === '10-K');
-    const annual = candidates.sort((a, b) => new Date(b.filed) - new Date(a.filed))[0];
+    // Сортировка по start (свежие первые)
+    const annual = candidates.sort((a, b) => new Date(b.start) - new Date(a.start))[0];
     result = annual?.val || null;
   }
   // Квартальные данные
@@ -331,19 +332,18 @@ function getMetricValue(factsData, metric, year, quarterParam, scale) {
         if (quarterInfo.type === 'ytd') {
           // 4q = 10-K
           const candidates = values.filter(v => v.fy === year && v.form === '10-K');
-          const annual10K = candidates.sort((a, b) => new Date(b.filed) - new Date(a.filed))[0];
+          const annual10K = candidates.sort((a, b) => new Date(b.start) - new Date(a.start))[0];
           result = annual10K?.val || null;
         } else {
           // q4 = 10-K − 3q
           const annualCandidates = values.filter(v => v.fy === year && v.form === '10-K');
-          const annual10K = annualCandidates.sort((a, b) => new Date(b.filed) - new Date(a.filed))[0];
+          const annual10K = annualCandidates.sort((a, b) => new Date(b.start) - new Date(a.start))[0];
           
           const ytdQ3Candidates = values.filter(v => v.fy === year && v.fp === 'Q3' && v.form === '10-Q');
-          // Для YTD Q3 выбираем запись с большей длительностью (YTD)
           const ytdQ3 = ytdQ3Candidates
             .filter(v => {
               const days = (new Date(v.end) - new Date(v.start)) / (1000 * 60 * 60 * 24);
-              return days >= 150; // YTD за 9 месяцев
+              return days >= 150;
             })
             .sort((a, b) => new Date(b.start) - new Date(a.start))[0];
           
@@ -366,7 +366,6 @@ function getMetricValue(factsData, metric, year, quarterParam, scale) {
             v.fp === targetFp
           );
           
-          // Фильтруем по длительности (80-100 дней для 3 месяцев)
           const filtered = candidates.filter(v => {
             const days = (new Date(v.end) - new Date(v.start)) / (1000 * 60 * 60 * 24);
             return days >= 80 && days <= 100;
@@ -376,14 +375,13 @@ function getMetricValue(factsData, metric, year, quarterParam, scale) {
           result = quarterValue?.val || null;
         }
         else if (quarterInfo.type === 'ytd') {
-          // 1q, 2q, 3q: YTD (нарастающим итогом)
+          // 1q, 2q, 3q: YTD
           const candidates = values.filter(v => 
             v.form === '10-Q' && 
             v.fy === year && 
             v.fp === targetFp
           );
           
-          // Фильтруем по длительности (>150 дней для YTD)
           const filtered = candidates.filter(v => {
             const days = (new Date(v.end) - new Date(v.start)) / (1000 * 60 * 60 * 24);
             return days >= 150;
@@ -398,6 +396,7 @@ function getMetricValue(factsData, metric, year, quarterParam, scale) {
   
   return applyScale(result, scale);
 }
+
 // ============ ЛОГИКА ДЛЯ ОТЧЁТОВ ============
 function getReportByOrder(recent, reportType, n, field) {
   const forms = recent.form || [];
