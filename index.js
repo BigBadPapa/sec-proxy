@@ -339,7 +339,13 @@ function getMetricValue(factsData, metric, year, quarterParam, scale) {
           const annual10K = annualCandidates.sort((a, b) => new Date(b.filed) - new Date(a.filed))[0];
           
           const ytdQ3Candidates = values.filter(v => v.fy === year && v.fp === 'Q3' && v.form === '10-Q');
-          const ytdQ3 = ytdQ3Candidates.sort((a, b) => new Date(b.start) - new Date(a.start))[0];
+          // Для YTD Q3 выбираем запись с большей длительностью (YTD)
+          const ytdQ3 = ytdQ3Candidates
+            .filter(v => {
+              const days = (new Date(v.end) - new Date(v.start)) / (1000 * 60 * 60 * 24);
+              return days >= 150; // YTD за 9 месяцев
+            })
+            .sort((a, b) => new Date(b.start) - new Date(a.start))[0];
           
           if (annual10K && ytdQ3) {
             result = annual10K.val - ytdQ3.val;
@@ -353,23 +359,37 @@ function getMetricValue(factsData, metric, year, quarterParam, scale) {
         const targetFp = `Q${quarterInfo.num}`;
         
         if (quarterInfo.type === 'quarter') {
-          // q1, q2, q3: поиск по fy и fp, сортировка по start (свежие первые)
+          // q1, q2, q3: только за квартал (3 месяца)
           const candidates = values.filter(v => 
             v.form === '10-Q' && 
             v.fy === year && 
             v.fp === targetFp
           );
-          const quarterValue = candidates.sort((a, b) => new Date(b.start) - new Date(a.start))[0];
+          
+          // Фильтруем по длительности (80-100 дней для 3 месяцев)
+          const filtered = candidates.filter(v => {
+            const days = (new Date(v.end) - new Date(v.start)) / (1000 * 60 * 60 * 24);
+            return days >= 80 && days <= 100;
+          });
+          
+          const quarterValue = filtered.sort((a, b) => new Date(b.start) - new Date(a.start))[0];
           result = quarterValue?.val || null;
         }
         else if (quarterInfo.type === 'ytd') {
-          // 1q, 2q, 3q: поиск по fy и fp, сортировка по start (свежие первые)
+          // 1q, 2q, 3q: YTD (нарастающим итогом)
           const candidates = values.filter(v => 
             v.form === '10-Q' && 
             v.fy === year && 
             v.fp === targetFp
           );
-          const ytdValue = candidates.sort((a, b) => new Date(b.start) - new Date(a.start))[0];
+          
+          // Фильтруем по длительности (>150 дней для YTD)
+          const filtered = candidates.filter(v => {
+            const days = (new Date(v.end) - new Date(v.start)) / (1000 * 60 * 60 * 24);
+            return days >= 150;
+          });
+          
+          const ytdValue = filtered.sort((a, b) => new Date(b.start) - new Date(a.start))[0];
           result = ytdValue?.val || null;
         }
       }
@@ -378,7 +398,6 @@ function getMetricValue(factsData, metric, year, quarterParam, scale) {
   
   return applyScale(result, scale);
 }
-
 // ============ ЛОГИКА ДЛЯ ОТЧЁТОВ ============
 function getReportByOrder(recent, reportType, n, field) {
   const forms = recent.form || [];
