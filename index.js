@@ -193,13 +193,13 @@ function buildFilingUrl(cik, accessionNumber, primaryDocument) {
   return `https://www.sec.gov/Archives/edgar/data/${cleanCik}/${cleanAcc}/`;
 }
 
-// ============ НОВАЯ ФУНКЦИЯ ============
+// ============ НОВЫЕ ФУНКЦИИ ============
 
 function parseQuarterString(quarterStr) {
   if (!quarterStr || typeof quarterStr !== 'string') return null;
   const lower = quarterStr.toLowerCase().trim();
   
-  // q1, q2, q3, q4 (только за квартал, 3 месяца)
+  // q1, q2, q3, q4 (только за квартал)
   if (lower === 'q1') return { type: 'quarter', num: 1 };
   if (lower === 'q2') return { type: 'quarter', num: 2 };
   if (lower === 'q3') return { type: 'quarter', num: 3 };
