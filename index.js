@@ -441,8 +441,6 @@ function getMetricValue(factsData, metric, year, quarterParam, scale) {
 
 // ============ TTM ФУНКЦИЯ ============
 function getTTMValue(factsData, metricName, scale) {
-
-  console.log('TTM DEBUG: Getting TTM for metric:', metricName);
   
   const catalog = METRICS_CATALOG[metricName];
   const ttmType = catalog?.ttm || 'sum';
@@ -466,14 +464,11 @@ function getTTMValue(factsData, metricName, scale) {
   const lastReport = allReports.sort((a, b) => new Date(b.filed) - new Date(a.filed))[0];
   
   if (!lastReport) return null;
-
-  // ========== ВСТАВИТЬ ==========
-  console.log('TTM DEBUG: Last report is 10-K, returning value:', lastReport.val, 'for year:', lastReport.fy);
-  // ========== КОНЕЦ ВСТАВКИ ==========
   
   // 2. Если последний отчёт — 10-K, возвращаем его значение
   if (lastReport.form === '10-K') {
-    return applyScale(lastReport.val, scale);
+    const annualValue = getMetricValueInternal(factsData, metricName, lastReport.fy, undefined, null);
+    return applyScale(annualValue, scale);
   }
   
   // 3. Если последний отчёт — 10-Q, собираем 4 квартала подряд
