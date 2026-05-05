@@ -339,7 +339,7 @@ function getMetricValue(factsData, metric, year, quarterParam, scale) {
           const annual10K = annualCandidates.sort((a, b) => new Date(b.filed) - new Date(a.filed))[0];
           
           const ytdQ3Candidates = values.filter(v => v.fy === year && v.fp === 'Q3' && v.form === '10-Q');
-          const ytdQ3 = ytdQ3Candidates.sort((a, b) => new Date(b.filed) - new Date(a.filed))[0];
+          const ytdQ3 = ytdQ3Candidates.sort((a, b) => new Date(b.start) - new Date(a.start))[0];
           
           if (annual10K && ytdQ3) {
             result = annual10K.val - ytdQ3.val;
@@ -353,34 +353,23 @@ function getMetricValue(factsData, metric, year, quarterParam, scale) {
         const targetFp = `Q${quarterInfo.num}`;
         
         if (quarterInfo.type === 'quarter') {
-          // q1, q2, q3
-          if (quarterInfo.num === 1) {
-            // q1: поиск по fy и fp
-            const candidates = values.filter(v => 
-              v.form === '10-Q' && 
-              v.fy === year && 
-              v.fp === targetFp
-            );
-            const quarterValue = candidates.sort((a, b) => new Date(b.filed) - new Date(a.filed))[0];
-            result = quarterValue?.val || null;
-          } else if (quarterInfo.num === 2 || quarterInfo.num === 3) {
-            // q2, q3: поиск по frame
-            const candidates = values.filter(v => 
-              v.form === '10-Q' && 
-              v.frame === `CY${year}Q${quarterInfo.num}`
-            );
-            const quarterValue = candidates.sort((a, b) => new Date(b.filed) - new Date(a.filed))[0];
-            result = quarterValue?.val || null;
-          }
-        }
-        else if (quarterInfo.type === 'ytd') {
-          // 1q, 2q, 3q: поиск по fy и fp
+          // q1, q2, q3: поиск по fy и fp, сортировка по start (свежие первые)
           const candidates = values.filter(v => 
             v.form === '10-Q' && 
             v.fy === year && 
             v.fp === targetFp
           );
-          const ytdValue = candidates.sort((a, b) => new Date(b.filed) - new Date(a.filed))[0];
+          const quarterValue = candidates.sort((a, b) => new Date(b.start) - new Date(a.start))[0];
+          result = quarterValue?.val || null;
+        }
+        else if (quarterInfo.type === 'ytd') {
+          // 1q, 2q, 3q: поиск по fy и fp, сортировка по start (свежие первые)
+          const candidates = values.filter(v => 
+            v.form === '10-Q' && 
+            v.fy === year && 
+            v.fp === targetFp
+          );
+          const ytdValue = candidates.sort((a, b) => new Date(b.start) - new Date(a.start))[0];
           result = ytdValue?.val || null;
         }
       }
