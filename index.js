@@ -285,31 +285,32 @@ function getTTMValue(values, metricName) {
     (v.form === '10-K' || v.form === '10-Q') && v.filed
   );
   const lastReport = allReports.sort((a, b) => new Date(b.filed) - new Date(a.filed))[0];
-
-  // ========== ЛОГИРОВАНИЕ ==========
+  
   console.log('=== TTM DEBUG ===');
-  console.log('Last report:', lastReport.form, lastReport.fy, lastReport.fp, lastReport.val);
+  console.log('Last report:', lastReport?.form, lastReport?.fy, lastReport?.fp, lastReport?.val);
   console.log('Total reports found:', allReports.length);
-// ========== КОНЕЦ ЛОГИРОВАНИЯ ==========
   
   if (!lastReport) return null;
   
   // 2. Если последний отчёт — 10-K, возвращаем его значение
   if (lastReport.form === '10-K') {
+    console.log('Last report is 10-K, returning value:', lastReport.val);
     return lastReport.val;
   }
   
   // 3. Если последний отчёт — 10-Q, собираем 4 квартала подряд
-  // Определяем позицию последнего квартала
-  const lastFp = lastReport.fp; // 'Q1', 'Q2', 'Q3'
-  const lastFy = lastReport.fy;
+  const lastFp = lastReport.fp;
   const lastQuarterNum = parseInt(lastFp.substring(1));
+  
+  console.log('lastFp:', lastFp);
+  console.log('lastQuarterNum:', lastQuarterNum);
+  console.log('Starting quarters generation...');
   
   // Собираем 4 квартала: [Q-3, Q-2, Q-1, Q0]
   const quarters = [];
   for (let i = 3; i >= 0; i--) {
     let quarterNum = lastQuarterNum - i;
-    let year = lastFy;
+    let year = lastReport.fy;
     
     if (quarterNum <= 0) {
       quarterNum += 4;
@@ -319,18 +320,20 @@ function getTTMValue(values, metricName) {
     quarters.push({ year: year, quarterNum: quarterNum });
   }
   
-  // Получаем значения для каждого квартала
+  console.log('Quarters to sum:', quarters);
+  
   let ttmSum = 0;
   let validQuarters = 0;
   
   for (const q of quarters) {
-    // Формируем параметр квартала (например, 'q1' для 3 месяцев)
     const quarterParam = `q${q.quarterNum}`;
     const quarterInfo = parseQuarterString(quarterParam);
     
-    if (!quarterInfo) continue;
+    if (!quarterInfo) {
+      console.log(`Failed to parse quarterParam: ${quarterParam}`);
+      continue;
+    }
     
-    // Получаем значение для квартала
     let value = null;
     
     if (quarterInfo.num === 4) {
@@ -370,13 +373,17 @@ function getTTMValue(values, metricName) {
       value = quarterValue?.val || null;
     }
     
+    console.log(`Getting value for ${q.year} Q${q.quarterNum}:`, value);
+    
     if (value !== null) {
       ttmSum += value;
       validQuarters++;
     }
   }
   
-  // Если есть хотя бы один квартал, возвращаем сумму (может быть меньше 4)
+  console.log('TTM sum:', ttmSum, 'Valid quarters:', validQuarters);
+  
+  // Если есть хотя бы один квартал, возвращаем сумму
   return validQuarters > 0 ? ttmSum : null;
 }
 
