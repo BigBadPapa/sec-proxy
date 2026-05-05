@@ -285,6 +285,12 @@ function getTTMValue(values, metricName) {
     (v.form === '10-K' || v.form === '10-Q') && v.filed
   );
   const lastReport = allReports.sort((a, b) => new Date(b.filed) - new Date(a.filed))[0];
+
+  // ========== ЛОГИРОВАНИЕ ==========
+  console.log('=== TTM DEBUG ===');
+  console.log('Last report:', lastReport.form, lastReport.fy, lastReport.fp, lastReport.val);
+  console.log('Total reports found:', allReports.length);
+// ========== КОНЕЦ ЛОГИРОВАНИЯ ==========
   
   if (!lastReport) return null;
   
