@@ -298,7 +298,6 @@ function getMetricValue(factsData, metric, year, quarterParam, scale) {
   let result = null;
   const isBalanceMetric = catalog.ttm === 'last';
   
-  // TTM пока не реализован
   if (year === undefined && quarterParam === undefined) {
     return null;
   }
@@ -306,11 +305,9 @@ function getMetricValue(factsData, metric, year, quarterParam, scale) {
   // Годовой отчёт
   if (quarterParam === undefined || quarterParam === 0 || quarterParam === 'annual' || quarterParam === 'год') {
     const candidates = values.filter(v => v.fy === year && v.form === '10-K');
-    // Сортировка по start (свежие первые)
     const annual = candidates.sort((a, b) => new Date(b.start) - new Date(a.start))[0];
     result = annual?.val || null;
   }
-  // Квартальные данные
   else if (year !== undefined && quarterParam) {
     const quarterInfo = parseQuarterString(quarterParam);
     
@@ -318,16 +315,13 @@ function getMetricValue(factsData, metric, year, quarterParam, scale) {
       return null;
     }
     
-    // Для балансовых метрик — берём последнее значение на дату
     if (isBalanceMetric) {
       const targetFp = `Q${quarterInfo.num}`;
       const candidates = values.filter(v => v.fy === year && v.fp === targetFp);
       const balanceValue = candidates.sort((a, b) => new Date(b.end) - new Date(a.end))[0];
       result = balanceValue?.val || null;
     }
-    // Для P&L и Cash Flow
     else {
-      // Q4 — особый случай
       if (quarterInfo.num === 4) {
         if (quarterInfo.type === 'ytd') {
           // 4q = 10-K
@@ -343,7 +337,7 @@ function getMetricValue(factsData, metric, year, quarterParam, scale) {
           const ytdQ3 = ytdQ3Candidates
             .filter(v => {
               const days = (new Date(v.end) - new Date(v.start)) / (1000 * 60 * 60 * 24);
-              return days >= 150;
+              return days >= 260 && days <= 280;
             })
             .sort((a, b) => new Date(b.start) - new Date(a.start))[0];
           
@@ -354,7 +348,6 @@ function getMetricValue(factsData, metric, year, quarterParam, scale) {
           }
         }
       }
-      // Q1, Q2, Q3
       else {
         const targetFp = `Q${quarterInfo.num}`;
         
@@ -382,9 +375,18 @@ function getMetricValue(factsData, metric, year, quarterParam, scale) {
             v.fp === targetFp
           );
           
+          let minDays = 0, maxDays = 0;
+          if (quarterInfo.num === 1) {
+            minDays = 80; maxDays = 100;
+          } else if (quarterInfo.num === 2) {
+            minDays = 170; maxDays = 190;
+          } else if (quarterInfo.num === 3) {
+            minDays = 260; maxDays = 280;
+          }
+          
           const filtered = candidates.filter(v => {
             const days = (new Date(v.end) - new Date(v.start)) / (1000 * 60 * 60 * 24);
-            return days >= 150;
+            return days >= minDays && days <= maxDays;
           });
           
           const ytdValue = filtered.sort((a, b) => new Date(b.start) - new Date(a.start))[0];
