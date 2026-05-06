@@ -332,8 +332,8 @@ function getMetricValueInternal(factsData, metric, year, quarterParam, scale) {
   // Годовой отчёт
   if (quarterParam === undefined || quarterParam === 0 || quarterParam === 'annual' || quarterParam === 'год') {
     const candidates = values.filter(v => v.fy === year && v.form === '10-K');
-    // Сортировка по start (новые первые)
-    const annual = candidates.sort((a, b) => new Date(b.start) - new Date(a.start))[0];
+    // Сортировка по end (новые первые)
+    const annual = candidates.sort((a, b) => new Date(b.end) - new Date(a.end))[0];
     result = annual?.val || null;
   }
   // Квартальные данные
