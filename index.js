@@ -332,6 +332,7 @@ function getMetricValueInternal(factsData, metric, year, quarterParam, scale) {
   // Годовой отчёт
   if (quarterParam === undefined || quarterParam === 0 || quarterParam === 'annual' || quarterParam === 'год') {
     const candidates = values.filter(v => v.fy === year && v.form === '10-K');
+    // Сортировка по start (новые первые)
     const annual = candidates.sort((a, b) => new Date(b.start) - new Date(a.start))[0];
     result = annual?.val || null;
   }
@@ -346,7 +347,8 @@ function getMetricValueInternal(factsData, metric, year, quarterParam, scale) {
     if (isBalanceMetric) {
       const targetFp = `Q${quarterInfo.num}`;
       const candidates = values.filter(v => v.fy === year && v.fp === targetFp);
-      const balanceValue = candidates.sort((a, b) => new Date(b.end) - new Date(a.end))[0];
+      // Баланс: сортировка по filed (новые первые)
+      const balanceValue = candidates.sort((a, b) => new Date(b.filed) - new Date(a.filed))[0];
       result = balanceValue?.val || null;
     }
     else {
@@ -355,6 +357,7 @@ function getMetricValueInternal(factsData, metric, year, quarterParam, scale) {
         if (quarterInfo.type === 'ytd') {
           // 4q = 10-K
           const candidates = values.filter(v => v.fy === year && v.form === '10-K');
+          // Сортировка по start (новые первые)
           const annual10K = candidates.sort((a, b) => new Date(b.start) - new Date(a.start))[0];
           result = annual10K?.val || null;
         } else {
@@ -389,16 +392,19 @@ function getMetricValueInternal(factsData, metric, year, quarterParam, scale) {
             v.fp === targetFp
           );
           
-          // Сначала ищем запись за 3 месяца (80-100 дней)
-          let quarterValue = candidates.find(v => {
+          // Сортируем всех кандидатов по start (новые первые)
+          const sorted = candidates.sort((a, b) => new Date(b.start) - new Date(a.start));
+          
+          // Ищем запись за 3 месяца (80-100 дней)
+          let quarterValue = sorted.find(v => {
             const days = (new Date(v.end) - new Date(v.start)) / (1000 * 60 * 60 * 24);
             return days >= 80 && days <= 100;
           });
           
           // Если нет 3-месячной записи, вычисляем через YTD (для q2 и q3)
           if (!quarterValue && (quarterInfo.num === 2 || quarterInfo.num === 3)) {
-            // Находим YTD за текущий квартал
-            const ytdCurrent = candidates.find(v => {
+            // Находим YTD за текущий квартал (длительность >= 150 дней)
+            const ytdCurrent = sorted.find(v => {
               const days = (new Date(v.end) - new Date(v.start)) / (1000 * 60 * 60 * 24);
               return days >= 150;
             });
@@ -437,12 +443,15 @@ function getMetricValueInternal(factsData, metric, year, quarterParam, scale) {
             minDays = 260; maxDays = 280;
           }
           
-          const filtered = candidates.filter(v => {
-            const days = (new Date(v.end) - new Date(v.start)) / (1000 * 60 * 60 * 24);
-            return days >= minDays && days <= maxDays;
-          });
+          // Сортировка по start (новые первые)
+          const filtered = candidates
+            .filter(v => {
+              const days = (new Date(v.end) - new Date(v.start)) / (1000 * 60 * 60 * 24);
+              return days >= minDays && days <= maxDays;
+            })
+            .sort((a, b) => new Date(b.start) - new Date(a.start));
           
-          const ytdValue = filtered.sort((a, b) => new Date(b.start) - new Date(a.start))[0];
+          const ytdValue = filtered[0];
           result = ytdValue?.val || null;
         }
       }
@@ -451,6 +460,7 @@ function getMetricValueInternal(factsData, metric, year, quarterParam, scale) {
   
   return result !== null ? applyScale(result, scale) : null;
 }
+
 // ============ ОСНОВНАЯ ФУНКЦИЯ ПОИСКА (ОБЁРТКА) ============
 function getMetricValue(factsData, metric, year, quarterParam, scale) {
   // TTM: нет года и нет квартала
