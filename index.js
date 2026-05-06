@@ -297,7 +297,7 @@ function getMetricValuesArray(factsData, metricName) {
 }
 
 function getQuarterValue(factsData, metricName, year, quarterParam) {
-  return ternal(factsData, metricName, year, quarterParam, null);
+  return getMetricValueInternal(factsData, metricName, year, quarterParam, null);
 }
 
 // ============ ОСНОВНАЯ ЛОГИКА ПОИСКА (ВНУТРЕННЯЯ) ============
@@ -343,23 +343,12 @@ function getMetricValueInternal(factsData, metric, year, quarterParam, scale) {
       return null;
     }
     
-    // ========== ИСПРАВЛЕННЫЙ БЛОК ДЛЯ БАЛАНСА ==========
     if (isBalanceMetric) {
       const targetFp = `Q${quarterInfo.num}`;
-      
-      // Для Q4 и 4q — берём 10-K
-      if (quarterInfo.num === 4) {
-        const candidates = values.filter(v => v.fy === year && v.form === '10-K');
-        const annual10K = candidates.sort((a, b) => new Date(b.filed) - new Date(a.filed))[0];
-        result = annual10K?.val || null;
-      } else {
-        const candidates = values.filter(v => v.fy === year && v.fp === targetFp);
-        // Сортировка по filed (свежие первые)
-        const balanceValue = candidates.sort((a, b) => new Date(b.filed) - new Date(a.filed))[0];
-        result = balanceValue?.val || null;
-      }
+      const candidates = values.filter(v => v.fy === year && v.fp === targetFp);
+      const balanceValue = candidates.sort((a, b) => new Date(b.end) - new Date(a.end))[0];
+      result = balanceValue?.val || null;
     }
-    // ========== КОНЕЦ БЛОКА ДЛЯ БАЛАНСА ==========
     else {
       // Q4 — особый случай
       if (quarterInfo.num === 4) {
@@ -439,6 +428,7 @@ function getMetricValueInternal(factsData, metric, year, quarterParam, scale) {
   
   return result !== null ? applyScale(result, scale) : null;
 }
+
 // ============ ОСНОВНАЯ ФУНКЦИЯ ПОИСКА (ОБЁРТКА) ============
 function getMetricValue(factsData, metric, year, quarterParam, scale) {
   // TTM: нет года и нет квартала
@@ -451,7 +441,6 @@ function getMetricValue(factsData, metric, year, quarterParam, scale) {
 
 // ============ TTM ФУНКЦИЯ ============
 function getTTMValue(factsData, metricName, scale) {
-  
   const catalog = METRICS_CATALOG[metricName];
   const ttmType = catalog?.ttm || 'sum';
   
@@ -477,9 +466,9 @@ function getTTMValue(factsData, metricName, scale) {
   
   // 2. Если последний отчёт — 10-K, возвращаем его значение
   if (lastReport.form === '10-K') {
-    const annualValue = getMetricValueInternal(factsData, metricName, lastReport.fy, undefined, null);
-    return applyScale(annualValue, scale);
-  }
+   const annualValue = getMetricValueInternal(factsData, metricName, lastReport.fy, undefined, null);
+  return applyScale(annualValue, scale);
+}
   
   // 3. Если последний отчёт — 10-Q, собираем 4 квартала подряд
   const lastQuarterNum = parseInt(lastReport.fp.substring(1));
