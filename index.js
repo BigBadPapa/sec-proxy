@@ -393,10 +393,10 @@ function getMetricValueInternal(factsData, metric, year, quarterParam, scale) {
           );
           
           // Сортируем всех кандидатов по start (новые первые)
-          const sorted = candidates.sort((a, b) => new Date(b.start) - new Date(a.start));
+          const sortedCandidates = candidates.sort((a, b) => new Date(b.start) - new Date(a.start));
           
           // Ищем запись за 3 месяца (80-100 дней)
-          let quarterValue = sorted.find(v => {
+          let quarterValue = sortedCandidates.find(v => {
             const days = (new Date(v.end) - new Date(v.start)) / (1000 * 60 * 60 * 24);
             return days >= 80 && days <= 100;
           });
@@ -404,23 +404,29 @@ function getMetricValueInternal(factsData, metric, year, quarterParam, scale) {
           // Если нет 3-месячной записи, вычисляем через YTD (для q2 и q3)
           if (!quarterValue && (quarterInfo.num === 2 || quarterInfo.num === 3)) {
             // Находим YTD за текущий квартал (длительность >= 150 дней)
-            const ytdCurrent = sorted.find(v => {
+            const ytdCurrent = sortedCandidates.find(v => {
               const days = (new Date(v.end) - new Date(v.start)) / (1000 * 60 * 60 * 24);
               return days >= 150;
             });
             
-            // Находим YTD за предыдущий квартал
-            const prevFp = `Q${quarterInfo.num - 1}`;
-            const ytdPrev = values.find(v => 
-              v.form === '10-Q' && 
-              v.fy === year && 
-              v.fp === prevFp
-            );
-            
-            if (ytdCurrent && ytdPrev) {
-              quarterValue = { val: ytdCurrent.val - ytdPrev.val };
-            } else if (ytdCurrent) {
-              quarterValue = ytdCurrent;
+            if (ytdCurrent) {
+              const prevFp = `Q${quarterInfo.num - 1}`;
+              
+              // Ищем ВСЕ кандидаты для предыдущего квартала
+              const prevCandidates = values.filter(v => 
+                v.form === '10-Q' && 
+                v.fy === ytdCurrent.fy && 
+                v.fp === prevFp
+              );
+              
+              // Сортируем по start (свежие первые) и берём первый
+              const ytdPrev = prevCandidates.sort((a, b) => new Date(b.start) - new Date(a.start))[0];
+              
+              if (ytdPrev) {
+                quarterValue = { val: ytdCurrent.val - ytdPrev.val };
+              } else {
+                quarterValue = ytdCurrent;
+              }
             }
           }
           
