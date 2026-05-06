@@ -346,10 +346,19 @@ function getMetricValueInternal(factsData, metric, year, quarterParam, scale) {
     
     if (isBalanceMetric) {
       const targetFp = `Q${quarterInfo.num}`;
-      const candidates = values.filter(v => v.fy === year && v.fp === targetFp);
-      // Баланс: сортировка по filed (новые первые)
-      const balanceValue = candidates.sort((a, b) => new Date(b.filed) - new Date(a.filed))[0];
-      result = balanceValue?.val || null;
+      
+      // Для Q4 и 4q — берём 10-K
+      if (quarterInfo.num === 4) {
+        const candidates = values.filter(v => v.fy === year && v.form === '10-K');
+        const annual10K = candidates.sort((a, b) => new Date(b.filed) - new Date(a.filed))[0];
+        result = annual10K?.val || null;
+      } else {
+        // Для Q1, Q2, Q3 — ищем запись с нужным fp
+        const candidates = values.filter(v => v.fy === year && v.fp === targetFp);
+        // Сортировка по filed (новые первые)
+        const balanceValue = candidates.sort((a, b) => new Date(b.filed) - new Date(a.filed))[0];
+        result = balanceValue?.val || null;
+      }
     }
     else {
       // Q4 — особый случай
