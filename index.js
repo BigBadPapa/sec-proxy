@@ -345,16 +345,16 @@ function getMetricValueInternal(factsData, metric, year, quarterParam, scale) {
     
     if (isBalanceMetric) {
       const targetFp = `Q${quarterInfo.num}`;
-  
-  // Для Q4 и 4q — берём 10-K
+      
+      // Для Q4 и 4q — берём 10-K
       if (quarterInfo.num === 4) {
         const candidates = values.filter(v => v.fy === year && v.form === '10-K');
         const annual10K = candidates.sort((a, b) => new Date(b.filed) - new Date(a.filed))[0];
         result = annual10K?.val || null;
       } else {
-      // Для Q1, Q2, Q3 — ищем запись с нужным fp
+        // Для Q1, Q2, Q3 — ищем запись с нужным fp
         const candidates = values.filter(v => v.fy === year && v.fp === targetFp);
-      // Сортируем по filed (свежие первые), чтобы взять правильное значение
+        // Сортируем по filed (свежие первые), чтобы взять правильное значение
         const balanceValue = candidates.sort((a, b) => new Date(b.filed) - new Date(a.filed))[0];
         result = balanceValue?.val || null;
       }
@@ -438,7 +438,6 @@ function getMetricValueInternal(factsData, metric, year, quarterParam, scale) {
   
   return result !== null ? applyScale(result, scale) : null;
 }
-
 // ============ ОСНОВНАЯ ФУНКЦИЯ ПОИСКА (ОБЁРТКА) ============
 function getMetricValue(factsData, metric, year, quarterParam, scale) {
   // TTM: нет года и нет квартала
