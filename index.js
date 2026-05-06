@@ -297,7 +297,7 @@ function getMetricValuesArray(factsData, metricName) {
 }
 
 function getQuarterValue(factsData, metricName, year, quarterParam) {
-  return getMetricValueInternal(factsData, metricName, year, quarterParam, null);
+  return ternal(factsData, metricName, year, quarterParam, null);
 }
 
 // ============ ОСНОВНАЯ ЛОГИКА ПОИСКА (ВНУТРЕННЯЯ) ============
@@ -343,6 +343,7 @@ function getMetricValueInternal(factsData, metric, year, quarterParam, scale) {
       return null;
     }
     
+    // ========== ИСПРАВЛЕННЫЙ БЛОК ДЛЯ БАЛАНСА ==========
     if (isBalanceMetric) {
       const targetFp = `Q${quarterInfo.num}`;
       
@@ -352,13 +353,13 @@ function getMetricValueInternal(factsData, metric, year, quarterParam, scale) {
         const annual10K = candidates.sort((a, b) => new Date(b.filed) - new Date(a.filed))[0];
         result = annual10K?.val || null;
       } else {
-        // Для Q1, Q2, Q3 — ищем запись с нужным fp
         const candidates = values.filter(v => v.fy === year && v.fp === targetFp);
-        // Сортируем по filed (свежие первые), чтобы взять правильное значение
+        // Сортировка по filed (свежие первые)
         const balanceValue = candidates.sort((a, b) => new Date(b.filed) - new Date(a.filed))[0];
         result = balanceValue?.val || null;
       }
     }
+    // ========== КОНЕЦ БЛОКА ДЛЯ БАЛАНСА ==========
     else {
       // Q4 — особый случай
       if (quarterInfo.num === 4) {
