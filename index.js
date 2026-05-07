@@ -342,68 +342,68 @@ function getMetricValueInternal(factsData, metric, year, quarterParam, scale) {
   
   if (!unitKey) return null;
   
-  // ========== COMPUTE ЛОГИКА (теперь unitKey определён) ==========
+    // ========== COMPUTE ЛОГИКА ==========
   if (!tagData && catalog.compute && catalog.compute.length > 0) {
     let sum = 0;
     let validCount = 0;
 
-    // ========== НАЧАЛО ВСТАВКИ ==========
-    console.log('COMPUTE: entering for metric', metric);
-    console.log('COMPUTE: computeTags', catalog.compute);
-    // ========== КОНЕЦ ВСТАВКИ ==========
-    
     for (const computeTag of catalog.compute) {
-      if (usGaap[computeTag]) {
-        const computeValues = usGaap[computeTag].units[unitKey];
-        if (computeValues && computeValues.length > 0) {
-          let computeResult = null;
-          
-          // TTM
-          if (year === undefined && quarterParam === undefined) {
-            const quarterly = computeValues.filter(v => v.fp && v.fp !== 'FY');
-            const last4 = quarterly.slice(0, 4);
-            if (last4.length === 4) {
-              computeResult = last4.reduce((acc, v) => acc + v.val, 0);
-            }
-          }
-          // Годовой отчёт
-          else if (quarterParam === undefined || quarterParam === 0 || quarterParam === 'annual' || quarterParam === 'год') {
-            const annual = computeValues.find(v => v.fy === year && v.form === '10-K');
-            computeResult = annual?.val || null;
-          }
-          // Квартальные данные
-          else if (year !== undefined && quarterParam) {
-            const quarterInfo = parseQuarterString(quarterParam);
-            if (quarterInfo) {
-              if (quarterInfo.type === 'quarter') {
-                const q = computeValues.find(v => v.fy === year && v.fp === `Q${quarterInfo.num}` && v.form === '10-Q');
-                computeResult = q?.val || null;
-              } else if (quarterInfo.type === 'ytd') {
-                const ytd = computeValues.find(v => v.fy === year && v.fp === `Q${quarterInfo.num}`);
-                computeResult = ytd?.val || null;
-              }
-            }
-          }
-          
-          if (computeResult !== null) {
-            if (catalog.operation === 'sum') {
-              sum += computeResult;
-            } else if (catalog.operation === 'subtract') {
-              sum -= computeResult;
-            }
-            validCount++;
+      if (!usGaap[computeTag]) continue;
+
+      const tagObj = usGaap[computeTag];
+      const units = tagObj.units;
+
+      // Важно: определяем unitKey индивидуально для каждого compute-тега
+      let currentUnitKey = Object.keys(units).find(k => k.includes('USD')) ||
+                           Object.keys(units).find(k => k.includes('shares')) ||
+                           Object.keys(units).find(k => k.includes('pure')) ||
+                           Object.keys(units)[0];
+
+      const computeValues = units[currentUnitKey];
+      if (!computeValues || computeValues.length === 0) continue;
+
+      let computeResult = null;
+
+      // TTM
+      if (year === undefined && quarterParam === undefined) {
+        const quarterly = computeValues.filter(v => v.fp && v.fp !== 'FY');
+        const last4 = quarterly.slice(0, 4);
+        if (last4.length === 4) {
+          computeResult = last4.reduce((acc, v) => acc + v.val, 0);
+        }
+      }
+      // Годовой отчёт
+      else if (quarterParam === undefined || quarterParam === 0 || quarterParam === 'annual' || quarterParam === 'год') {
+        const annual = computeValues.find(v => v.fy === year && v.form === '10-K');
+        computeResult = annual?.val || null;
+      }
+      // Квартальные данные
+      else if (year !== undefined && quarterParam) {
+        const quarterInfo = parseQuarterString(quarterParam);
+        if (quarterInfo) {
+          if (quarterInfo.type === 'quarter') {
+            const q = computeValues.find(v => v.fy === year && v.fp === `Q${quarterInfo.num}` && v.form === '10-Q');
+            computeResult = q?.val || null;
+          } else if (quarterInfo.type === 'ytd') {
+            const ytd = computeValues.find(v => v.fy === year && v.fp === `Q${quarterInfo.num}`);
+            computeResult = ytd?.val || null;
           }
         }
       }
+
+      if (computeResult !== null) {
+        if (catalog.operation === 'sum') {
+          sum += computeResult;
+        } else if (catalog.operation === 'subtract') {
+          sum -= computeResult;
+        }
+        validCount++;
+      }
     }
 
-    // ========== НАЧАЛО ВСТАВКИ 2 ==========
-    console.log('COMPUTE: sum', sum, 'validCount', validCount);
-    // ========== КОНЕЦ ВСТАВКИ 2 ==========
-    
-    if (validCount === catalog.compute.length) {
-      const result = sum;
-      return result !== null ? applyScale(result, scale) : null;
+    // Главное изменение: возвращаем результат, если нашли хотя бы один тег
+    if (validCount > 0) {
+      return applyScale(sum, scale);
     }
   }
   // ========== КОНЕЦ COMPUTE ЛОГИКИ ==========
