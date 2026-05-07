@@ -522,18 +522,28 @@ function getTTMValue(factsData, metricName, scale) {
   const catalog = METRICS_CATALOG[metricName];
   const ttmType = catalog?.ttm || 'sum';
   
-  // Для баланса TTM — просто последнее значение (compute уже обработает getMetricValueInternal)
+  // Балансовые метрики: последнее значение
   if (ttmType === 'last') {
-    const value = getMetricValueInternal(factsData, metricName, undefined, undefined, null);
-    return value !== null ? applyScale(value, scale) : null;
+    // Сначала пробуем прямой тег
+    let values = getMetricValuesArray(factsData, metricName);
+    
+    // Если нет данных и есть compute — используем первый compute-тег
+    if ((!values || values.length === 0) && catalog.compute && catalog.compute.length > 0) {
+      values = getMetricValuesArray(factsData, catalog.compute[0]);
+    }
+    
+    if (!values) return null;
+    const sorted = values.sort((a, b) => new Date(b.end) - new Date(a.end));
+    return applyScale(sorted[0]?.val, scale);
   }
   
   // P&L и Cash Flow
-  // Находим последний отчёт через первый тег (прямой или compute)
-  let values = null;
-  if (catalog.tags && catalog.tags.length > 0) {
-    values = getMetricValuesArray(factsData, metricName);
-  } else if (catalog.compute && catalog.compute.length > 0) {
+  // 1. Находим последний отчёт (10-K или 10-Q) по дате подачи
+  // Сначала пробуем прямой тег
+  let values = getMetricValuesArray(factsData, metricName);
+  
+  // Если нет данных и есть compute — используем первый compute-тег
+  if ((!values || values.length === 0) && catalog.compute && catalog.compute.length > 0) {
     values = getMetricValuesArray(factsData, catalog.compute[0]);
   }
   
@@ -546,13 +556,13 @@ function getTTMValue(factsData, metricName, scale) {
   
   if (!lastReport) return null;
   
-  // Если последний отчёт — 10-K, возвращаем его значение
+  // 2. Если последний отчёт — 10-K, возвращаем его значение
   if (lastReport.form === '10-K') {
     const annualValue = getMetricValueInternal(factsData, metricName, lastReport.fy, undefined, null);
     return applyScale(annualValue, scale);
   }
   
-  // Если последний отчёт — 10-Q, собираем 4 квартала подряд
+  // 3. Если последний отчёт — 10-Q, собираем 4 квартала подряд
   const lastQuarterNum = parseInt(lastReport.fp.substring(1));
   const lastYear = lastReport.fy;
   
@@ -567,7 +577,7 @@ function getTTMValue(factsData, metricName, scale) {
     quarters.push({ year: year, quarterNum: quarterNum });
   }
   
-  // Получаем значения через getMetricValueInternal для каждого квартала
+  // 4. Получаем значения через getMetricValueInternal для каждого квартала
   let sum = 0;
   let validCount = 0;
   
@@ -585,7 +595,6 @@ function getTTMValue(factsData, metricName, scale) {
   
   return applyScale(sum, scale);
 }
-
 // ============ ЛОГИКА ДЛЯ ОТЧЁТОВ ============
 function getReportByOrder(recent, reportType, n, field) {
   const forms = recent.form || [];
