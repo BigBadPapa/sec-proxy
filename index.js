@@ -373,6 +373,16 @@ function getMetricValueInternal(factsData, metric, year, quarterParam, scale) {
     }
   }
   // ========== КОНЕЦ ВСТАВКИ ==========
+  // ========== ЛОГИРОВАНИЕ (ВСТАВИТЬ СЮДА) ==========
+  console.log('COMPUTE DEBUG:', { 
+    metric: metric,
+    hasTagData: !!tagData,
+    hasCompute: !!(catalog.compute && catalog.compute.length > 0),
+    computeTags: catalog.compute || [],
+    year: year,
+    quarterParam: quarterParam
+  });
+  // ========== КОНЕЦ ЛОГИРОВАНИЯ ==========
   
   if (!tagData) return null;
   
