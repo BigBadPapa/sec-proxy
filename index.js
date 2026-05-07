@@ -448,10 +448,6 @@ function getValueFromTag(tagData, metricName, year, quarterParam, isBalanceMetri
   return result;
 }
 
-function getQuarterValue(factsData, metricName, year, quarterParam) {
-  return getMetricValueInternal(factsData, metricName, year, quarterParam, null);
-}
-
 // ============ ОСНОВНАЯ ЛОГИКА ПОИСКА (ВНУТРЕННЯЯ) ============
 function getMetricValueInternal(factsData, metric, year, quarterParam, scale) {
   const catalog = METRICS_CATALOG[metric];
