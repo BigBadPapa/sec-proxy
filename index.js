@@ -79,7 +79,7 @@ const METRICS_CATALOG = {
   totalequity: { tags: ['StockholdersEquity', 'PartnersCapital', 'MembersEquity', 'Equity'], category: 'Equity', ttm: 'last', ru: 'ВСЕГО КАПИТАЛ' },
 
   // Cash Flow
-  ocf: { tags: ['NetCashProvidedByUsedInOperatingActivities'], category: 'CashFlow', ttm: 'sum', ru: 'OCF' },
+  ocf: { tags: ['NetCashProvidedByUsedInOperatingActivities','NetCashProvidedByUsedInOperatingActivitiesContinuingOperations'], category: 'CashFlow', ttm: 'sum', ru: 'OCF' },
   icf: { tags: ['NetCashProvidedByUsedInInvestingActivities'], category: 'CashFlow', ttm: 'sum', ru: 'ICF' },
   fcf: { tags: ['NetCashProvidedByUsedInFinancingActivities'], category: 'CashFlow', ttm: 'sum', ru: 'FCF' },
   
