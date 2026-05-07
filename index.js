@@ -315,6 +315,64 @@ function getMetricValueInternal(factsData, metric, year, quarterParam, scale) {
       break;
     }
   }
+
+  // ========== НАЧАЛО ВСТАВКИ ==========
+  // Если прямой тег не найден, но есть compute — вычисляем сумму
+  if (!tagData && catalog.compute && catalog.compute.length > 0) {
+    let sum = 0;
+    let validCount = 0;
+    
+    for (const computeTag of catalog.compute) {
+      if (usGaap[computeTag]) {
+        const computeValues = usGaap[computeTag].units[unitKey];
+        if (computeValues && computeValues.length > 0) {
+          let computeResult = null;
+          
+          // TTM
+          if (year === undefined && quarterParam === undefined) {
+            const quarterly = computeValues.filter(v => v.fp && v.fp !== 'FY');
+            const last4 = quarterly.slice(0, 4);
+            if (last4.length === 4) {
+              computeResult = last4.reduce((acc, v) => acc + v.val, 0);
+            }
+          }
+          // Годовой отчёт
+          else if (quarterParam === undefined || quarterParam === 0 || quarterParam === 'annual' || quarterParam === 'год') {
+            const annual = computeValues.find(v => v.fy === year && v.form === '10-K');
+            computeResult = annual?.val || null;
+          }
+          // Квартальные данные
+          else if (year !== undefined && quarterParam) {
+            const quarterInfo = parseQuarterString(quarterParam);
+            if (quarterInfo) {
+              if (quarterInfo.type === 'quarter') {
+                const q = computeValues.find(v => v.fy === year && v.fp === `Q${quarterInfo.num}` && v.form === '10-Q');
+                computeResult = q?.val || null;
+              } else if (quarterInfo.type === 'ytd') {
+                const ytd = computeValues.find(v => v.fy === year && v.fp === `Q${quarterInfo.num}`);
+                computeResult = ytd?.val || null;
+              }
+            }
+          }
+          
+          if (computeResult !== null) {
+            if (catalog.operation === 'sum') {
+              sum += computeResult;
+            } else if (catalog.operation === 'subtract') {
+              sum -= computeResult;
+            }
+            validCount++;
+          }
+        }
+      }
+    }
+    
+    if (validCount === catalog.compute.length) {
+      result = sum;
+      return result !== null ? applyScale(result, scale) : null;
+    }
+  }
+  // ========== КОНЕЦ ВСТАВКИ ==========
   
   if (!tagData) return null;
   
