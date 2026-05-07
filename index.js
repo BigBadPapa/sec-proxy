@@ -106,7 +106,7 @@ const METRICS_CATALOG = {
   otherfinancingactivities: { tags: ['OtherFinancingActivities'], category: 'CashFlow', ttm: 'sum', ru: 'Прочие финансовые' },
   
   effectofexchangerate: { tags: ['EffectOfExchangeRateOnCashAndCashEquivalents'], category: 'CashFlow', ttm: 'sum', ru: 'Влияние курсов валют' },
-  netchangeincash: { tags: [], compute: ['CashCashEquivalentsRestrictedCashAndRestrictedCashEquivalentsPeriodIncreaseDecreaseExcludingExchangeRateEffect', 'EffectOfExchangeRateOnCashCashEquivalentsRestrictedCashAndRestrictedCashEquivalents'], operation: 'sum', category: 'CashFlow', ttm: 'sum', ru: 'Чистое изменение денег' },
+  netchangeincash: { tags: ['CashCashEquivalentsRestrictedCashAndRestrictedCashEquivalentsPeriodIncreaseDecreaseIncludingExchangeRateEffect'], compute: ['CashCashEquivalentsRestrictedCashAndRestrictedCashEquivalentsPeriodIncreaseDecreaseExcludingExchangeRateEffect', 'EffectOfExchangeRateOnCashCashEquivalentsRestrictedCashAndRestrictedCashEquivalents'], operation: 'sum', category: 'CashFlow', ttm: 'sum', ru: 'Чистое изменение денег' },
   beginningcash: { tags: ['CashAndCashEquivalentsAtBeginningOfPeriod'], category: 'CashFlow', ttm: 'last', ru: 'Деньги на начало' },
   endingcash: { tags: ['CashAndCashEquivalentsAtEndOfPeriod'], category: 'CashFlow', ttm: 'last', ru: 'Деньги на конец' },
 
@@ -308,6 +308,7 @@ function getMetricValueInternal(factsData, metric, year, quarterParam, scale) {
   const usGaap = factsData?.facts?.['us-gaap'];
   if (!usGaap) return null;
   
+  // Сначала находим tagData (прямой тег)
   let tagData = null;
   for (const tag of catalog.tags) {
     if (usGaap[tag]) {
@@ -315,9 +316,33 @@ function getMetricValueInternal(factsData, metric, year, quarterParam, scale) {
       break;
     }
   }
-
-  // ========== НАЧАЛО ВСТАВКИ ==========
-  // Если прямой тег не найден, но есть compute — вычисляем сумму
+  
+  // Определяем unitKey (есть ли он в tagData или в compute-тегах)
+  let unitKey = null;
+  
+  if (tagData) {
+    const units = tagData.units;
+    unitKey = Object.keys(units).find(k => k.includes('USD')) || 
+              Object.keys(units).find(k => k.includes('shares')) ||
+              Object.keys(units).find(k => k.includes('pure')) ||
+              Object.keys(units)[0];
+  } else if (catalog.compute && catalog.compute.length > 0) {
+    // Ищем unitKey через первый существующий compute-тег
+    for (const computeTag of catalog.compute) {
+      if (usGaap[computeTag]) {
+        const units = usGaap[computeTag].units;
+        unitKey = Object.keys(units).find(k => k.includes('USD')) || 
+                  Object.keys(units).find(k => k.includes('shares')) ||
+                  Object.keys(units).find(k => k.includes('pure')) ||
+                  Object.keys(units)[0];
+        if (unitKey) break;
+      }
+    }
+  }
+  
+  if (!unitKey) return null;
+  
+  // ========== COMPUTE ЛОГИКА (теперь unitKey определён) ==========
   if (!tagData && catalog.compute && catalog.compute.length > 0) {
     let sum = 0;
     let validCount = 0;
@@ -368,29 +393,16 @@ function getMetricValueInternal(factsData, metric, year, quarterParam, scale) {
     }
     
     if (validCount === catalog.compute.length) {
-      result = sum;
+      const result = sum;
       return result !== null ? applyScale(result, scale) : null;
     }
   }
-  // ========== КОНЕЦ ВСТАВКИ ==========
-  // ========== ЛОГИРОВАНИЕ (ВСТАВИТЬ СЮДА) ==========
-  console.log('COMPUTE DEBUG:', { 
-    metric: metric,
-    hasTagData: !!tagData,
-    hasCompute: !!(catalog.compute && catalog.compute.length > 0),
-    computeTags: catalog.compute || [],
-    year: year,
-    quarterParam: quarterParam
-  });
-  // ========== КОНЕЦ ЛОГИРОВАНИЯ ==========
+  // ========== КОНЕЦ COMPUTE ЛОГИКИ ==========
   
   if (!tagData) return null;
   
   const units = tagData.units;
-  const unitKey = Object.keys(units).find(k => k.includes('USD')) || 
-                  Object.keys(units).find(k => k.includes('shares')) ||
-                  Object.keys(units).find(k => k.includes('pure')) ||
-                  Object.keys(units)[0];
+  // unitKey уже определён, используем его
   const values = units[unitKey];
   if (!values || values.length === 0) return null;
   
