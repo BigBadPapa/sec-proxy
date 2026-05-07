@@ -346,6 +346,11 @@ function getMetricValueInternal(factsData, metric, year, quarterParam, scale) {
   if (!tagData && catalog.compute && catalog.compute.length > 0) {
     let sum = 0;
     let validCount = 0;
+
+    // ========== НАЧАЛО ВСТАВКИ ==========
+    console.log('COMPUTE: entering for metric', metric);
+    console.log('COMPUTE: computeTags', catalog.compute);
+    // ========== КОНЕЦ ВСТАВКИ ==========
     
     for (const computeTag of catalog.compute) {
       if (usGaap[computeTag]) {
@@ -391,6 +396,10 @@ function getMetricValueInternal(factsData, metric, year, quarterParam, scale) {
         }
       }
     }
+
+    // ========== НАЧАЛО ВСТАВКИ 2 ==========
+    console.log('COMPUTE: sum', sum, 'validCount', validCount);
+    // ========== КОНЕЦ ВСТАВКИ 2 ==========
     
     if (validCount === catalog.compute.length) {
       const result = sum;
