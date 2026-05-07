@@ -521,6 +521,12 @@ function getMetricValue(factsData, metric, year, quarterParam, scale) {
 function getTTMValue(factsData, metricName, scale) {
   const catalog = METRICS_CATALOG[metricName];
   const ttmType = catalog?.ttm || 'sum';
+
+  console.log('=== TTM DEBUG ===');
+  console.log('metricName:', metricName);
+  console.log('ttmType:', ttmType);
+  console.log('hasCompute:', !!(catalog.compute && catalog.compute.length > 0));
+  console.log('computeTags:', catalog.compute || []);
   
   // Балансовые метрики: последнее значение
   if (ttmType === 'last') {
