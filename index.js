@@ -517,54 +517,65 @@ function getMetricValue(factsData, metric, year, quarterParam, scale) {
 function getTTMValue(factsData, metricName, scale) {
   const catalog = METRICS_CATALOG[metricName];
   const ttmType = catalog?.ttm || 'sum';
-
+  
   console.log('=== TTM DEBUG ===');
   console.log('metricName:', metricName);
   console.log('ttmType:', ttmType);
   console.log('hasCompute:', !!(catalog.compute && catalog.compute.length > 0));
   console.log('computeTags:', catalog.compute || []);
   
-  // Балансовые метрики: последнее значение
+  // Балансовые метрики
   if (ttmType === 'last') {
-    // Пробуем прямой тег
+    console.log('Branch: balance');
     let values = getMetricValuesArray(factsData, metricName);
+    console.log('values from direct tag:', values ? values.length : null);
     
-    // Если нет данных и есть compute — пробуем первый compute-тег
     if ((!values || values.length === 0) && catalog.compute && catalog.compute.length > 0) {
       values = getMetricValuesArray(factsData, catalog.compute[0]);
+      console.log('values from compute tag:', values ? values.length : null);
     }
     
-    if (!values) return null;
+    if (!values) {
+      console.log('No values, returning null');
+      return null;
+    }
     const sorted = values.sort((a, b) => new Date(b.end) - new Date(a.end));
     return applyScale(sorted[0]?.val, scale);
   }
   
   // P&L и Cash Flow
-  // Пробуем получить массив значений через прямой тег
-  let values = getMetricValuesArray(factsData, metricName);
+  console.log('Branch: P&L / Cash Flow');
   
-  // Если прямого тега нет (нет данных) и есть compute — берём первый compute-тег
+  let values = getMetricValuesArray(factsData, metricName);
+  console.log('values from direct tag:', values ? values.length : null);
+  
   if ((!values || values.length === 0) && catalog.compute && catalog.compute.length > 0) {
     values = getMetricValuesArray(factsData, catalog.compute[0]);
+    console.log('values from compute tag:', values ? values.length : null);
   }
   
-  if (!values) return null;
+  if (!values) {
+    console.log('No values, returning null');
+    return null;
+  }
   
-  // Находим последний отчёт
-  const allReports = values.filter(v => 
-    (v.form === '10-K' || v.form === '10-Q') && v.filed
-  );
+  const allReports = values.filter(v => (v.form === '10-K' || v.form === '10-Q') && v.filed);
+  console.log('allReports count:', allReports.length);
+  
   const lastReport = allReports.sort((a, b) => new Date(b.filed) - new Date(a.filed))[0];
+  console.log('lastReport:', lastReport ? { form: lastReport.form, fy: lastReport.fy, fp: lastReport.fp } : 'null');
   
   if (!lastReport) return null;
   
-  // Если последний отчёт — 10-K, возвращаем его значение
   if (lastReport.form === '10-K') {
+    console.log('Last report is 10-K, getting annual value');
     const annualValue = getMetricValueInternal(factsData, metricName, lastReport.fy, undefined, null);
+    console.log('annualValue:', annualValue);
     return applyScale(annualValue, scale);
   }
   
-  // Если последний отчёт — 10-Q, собираем 4 квартала подряд
+  // 10-Q логика
+  console.log('Last report is 10-Q, collecting 4 quarters');
   const lastQuarterNum = parseInt(lastReport.fp.substring(1));
   const lastYear = lastReport.fy;
   
@@ -578,23 +589,24 @@ function getTTMValue(factsData, metricName, scale) {
     }
     quarters.push({ year: year, quarterNum: quarterNum });
   }
+  console.log('Quarters to collect:', quarters);
   
-  // Получаем значения через getMetricValueInternal (она уже умеет работать с compute)
   let sum = 0;
   let validCount = 0;
   
   for (const q of quarters) {
     const quarterParam = `q${q.quarterNum}`;
     const value = getMetricValueInternal(factsData, metricName, q.year, quarterParam, null);
-    
+    console.log(`Quarter ${q.year} Q${q.quarterNum}:`, value);
     if (value !== null) {
       sum += value;
       validCount++;
     }
   }
   
-  if (validCount === 0) return null;
+  console.log('TTM sum:', sum, 'validCount:', validCount);
   
+  if (validCount === 0) return null;
   return applyScale(sum, scale);
 }
 // ============ ЛОГИКА ДЛЯ ОТЧЁТОВ ============
