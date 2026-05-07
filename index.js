@@ -524,10 +524,10 @@ function getTTMValue(factsData, metricName, scale) {
   
   // Балансовые метрики: последнее значение
   if (ttmType === 'last') {
-    // Сначала пробуем прямой тег
+    // Пробуем прямой тег
     let values = getMetricValuesArray(factsData, metricName);
     
-    // Если нет данных и есть compute — используем первый compute-тег
+    // Если нет данных и есть compute — пробуем первый compute-тег
     if ((!values || values.length === 0) && catalog.compute && catalog.compute.length > 0) {
       values = getMetricValuesArray(factsData, catalog.compute[0]);
     }
@@ -538,17 +538,17 @@ function getTTMValue(factsData, metricName, scale) {
   }
   
   // P&L и Cash Flow
-  // 1. Находим последний отчёт (10-K или 10-Q) по дате подачи
-  // Сначала пробуем прямой тег
+  // Пробуем получить массив значений через прямой тег
   let values = getMetricValuesArray(factsData, metricName);
   
-  // Если нет данных и есть compute — используем первый compute-тег
+  // Если прямого тега нет (нет данных) и есть compute — берём первый compute-тег
   if ((!values || values.length === 0) && catalog.compute && catalog.compute.length > 0) {
     values = getMetricValuesArray(factsData, catalog.compute[0]);
   }
   
   if (!values) return null;
   
+  // Находим последний отчёт
   const allReports = values.filter(v => 
     (v.form === '10-K' || v.form === '10-Q') && v.filed
   );
@@ -556,13 +556,13 @@ function getTTMValue(factsData, metricName, scale) {
   
   if (!lastReport) return null;
   
-  // 2. Если последний отчёт — 10-K, возвращаем его значение
+  // Если последний отчёт — 10-K, возвращаем его значение
   if (lastReport.form === '10-K') {
     const annualValue = getMetricValueInternal(factsData, metricName, lastReport.fy, undefined, null);
     return applyScale(annualValue, scale);
   }
   
-  // 3. Если последний отчёт — 10-Q, собираем 4 квартала подряд
+  // Если последний отчёт — 10-Q, собираем 4 квартала подряд
   const lastQuarterNum = parseInt(lastReport.fp.substring(1));
   const lastYear = lastReport.fy;
   
@@ -577,7 +577,7 @@ function getTTMValue(factsData, metricName, scale) {
     quarters.push({ year: year, quarterNum: quarterNum });
   }
   
-  // 4. Получаем значения через getMetricValueInternal для каждого квартала
+  // Получаем значения через getMetricValueInternal (она уже умеет работать с compute)
   let sum = 0;
   let validCount = 0;
   
