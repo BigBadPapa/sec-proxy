@@ -271,28 +271,48 @@ async function getCompanyFacts(cik) {
 
 // ============ ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ДЛЯ МЕТРИК ============
 
-function getMetricValuesArray(factsData, metricName) {
-  const catalog = METRICS_CATALOG[metricName];
-  if (!catalog) return null;
+function getMetricValuesArray(factsData, tagOrAlias) {
+  // Проверяем, является ли tagOrAlias алиасом (есть в METRICS_CATALOG)
+  const catalog = METRICS_CATALOG[tagOrAlias];
+  let tagName = tagOrAlias;
+  
+  // Определяем unitKey
+  let unitKey = null;
   
   const usGaap = factsData?.facts?.['us-gaap'];
   if (!usGaap) return null;
   
-  let tagData = null;
-  for (const tag of catalog.tags) {
-    if (usGaap[tag]) {
-      tagData = usGaap[tag];
-      break;
+  if (catalog) {
+    // Это алиас — ищем по tags
+    let tagData = null;
+    for (const tag of catalog.tags) {
+      if (usGaap[tag]) {
+        tagData = usGaap[tag];
+        tagName = tag;
+        break;
+      }
     }
+    if (!tagData) return null;
+    
+    const units = tagData.units;
+    unitKey = Object.keys(units).find(k => k.includes('USD')) || 
+              Object.keys(units).find(k => k.includes('shares')) ||
+              Object.keys(units).find(k => k.includes('pure')) ||
+              Object.keys(units)[0];
+    if (!unitKey) return null;
+    return units[unitKey] || null;
   }
   
+  // Это прямой XBRL-тег — ищем напрямую
+  const tagData = usGaap[tagName];
   if (!tagData) return null;
   
   const units = tagData.units;
-  const unitKey = Object.keys(units).find(k => k.includes('USD')) || 
-                  Object.keys(units).find(k => k.includes('shares')) ||
-                  Object.keys(units).find(k => k.includes('pure')) ||
-                  Object.keys(units)[0];
+  unitKey = Object.keys(units).find(k => k.includes('USD')) || 
+            Object.keys(units).find(k => k.includes('shares')) ||
+            Object.keys(units).find(k => k.includes('pure')) ||
+            Object.keys(units)[0];
+  if (!unitKey) return null;
   return units[unitKey] || null;
 }
 
@@ -518,64 +538,46 @@ function getTTMValue(factsData, metricName, scale) {
   const catalog = METRICS_CATALOG[metricName];
   const ttmType = catalog?.ttm || 'sum';
   
-  console.log('=== TTM DEBUG ===');
-  console.log('metricName:', metricName);
-  console.log('ttmType:', ttmType);
-  console.log('hasCompute:', !!(catalog.compute && catalog.compute.length > 0));
-  console.log('computeTags:', catalog.compute || []);
-  
-  // Балансовые метрики
+  // Балансовые метрики: последнее значение
   if (ttmType === 'last') {
-    console.log('Branch: balance');
+    // Сначала пробуем прямой тег
     let values = getMetricValuesArray(factsData, metricName);
-    console.log('values from direct tag:', values ? values.length : null);
     
+    // Если нет данных и есть compute — используем первый compute-тег
     if ((!values || values.length === 0) && catalog.compute && catalog.compute.length > 0) {
       values = getMetricValuesArray(factsData, catalog.compute[0]);
-      console.log('values from compute tag:', values ? values.length : null);
     }
     
-    if (!values) {
-      console.log('No values, returning null');
-      return null;
-    }
+    if (!values) return null;
     const sorted = values.sort((a, b) => new Date(b.end) - new Date(a.end));
     return applyScale(sorted[0]?.val, scale);
   }
   
   // P&L и Cash Flow
-  console.log('Branch: P&L / Cash Flow');
-  
+  // Сначала пробуем прямой тег
   let values = getMetricValuesArray(factsData, metricName);
-  console.log('values from direct tag:', values ? values.length : null);
   
+  // Если нет данных и есть compute — используем первый compute-тег
   if ((!values || values.length === 0) && catalog.compute && catalog.compute.length > 0) {
     values = getMetricValuesArray(factsData, catalog.compute[0]);
-    console.log('values from compute tag:', values ? values.length : null);
   }
   
-  if (!values) {
-    console.log('No values, returning null');
-    return null;
-  }
+  if (!values) return null;
   
-  const allReports = values.filter(v => (v.form === '10-K' || v.form === '10-Q') && v.filed);
-  console.log('allReports count:', allReports.length);
-  
+  const allReports = values.filter(v => 
+    (v.form === '10-K' || v.form === '10-Q') && v.filed
+  );
   const lastReport = allReports.sort((a, b) => new Date(b.filed) - new Date(a.filed))[0];
-  console.log('lastReport:', lastReport ? { form: lastReport.form, fy: lastReport.fy, fp: lastReport.fp } : 'null');
   
   if (!lastReport) return null;
   
+  // Если последний отчёт — 10-K, возвращаем его значение
   if (lastReport.form === '10-K') {
-    console.log('Last report is 10-K, getting annual value');
     const annualValue = getMetricValueInternal(factsData, metricName, lastReport.fy, undefined, null);
-    console.log('annualValue:', annualValue);
     return applyScale(annualValue, scale);
   }
   
-  // 10-Q логика
-  console.log('Last report is 10-Q, collecting 4 quarters');
+  // Если последний отчёт — 10-Q, собираем 4 квартала подряд
   const lastQuarterNum = parseInt(lastReport.fp.substring(1));
   const lastYear = lastReport.fy;
   
@@ -589,26 +591,26 @@ function getTTMValue(factsData, metricName, scale) {
     }
     quarters.push({ year: year, quarterNum: quarterNum });
   }
-  console.log('Quarters to collect:', quarters);
   
+  // Получаем значения через getMetricValueInternal для каждого квартала
   let sum = 0;
   let validCount = 0;
   
   for (const q of quarters) {
     const quarterParam = `q${q.quarterNum}`;
     const value = getMetricValueInternal(factsData, metricName, q.year, quarterParam, null);
-    console.log(`Quarter ${q.year} Q${q.quarterNum}:`, value);
+    
     if (value !== null) {
       sum += value;
       validCount++;
     }
   }
   
-  console.log('TTM sum:', sum, 'validCount:', validCount);
-  
   if (validCount === 0) return null;
+  
   return applyScale(sum, scale);
 }
+
 // ============ ЛОГИКА ДЛЯ ОТЧЁТОВ ============
 function getReportByOrder(recent, reportType, n, field) {
   const forms = recent.form || [];
