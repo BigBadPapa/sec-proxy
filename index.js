@@ -278,6 +278,16 @@ function getMetricValuesArray(factsData, tagOrAlias) {
   
   const facts = factsData?.facts;
   if (!facts) return null;
+
+  // ========== НАЧАЛО ВСТАВКИ ==========
+  console.log('Searching for:', tagOrAlias);
+  for (const taxonomy of taxonomies) {
+    const taxData = facts[taxonomy];
+    if (taxData && taxData[tagOrAlias]) {
+      console.log('FOUND in:', taxonomy);
+    }
+  }
+  // ========== КОНЕЦ ВСТАВКИ ==========
   
   if (catalog) {
     // Это алиас — ищем по tags в каждой таксономии
