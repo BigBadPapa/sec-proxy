@@ -272,50 +272,47 @@ async function getCompanyFacts(cik) {
 }
 
 // ============ ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ДЛЯ МЕТРИК ============
-
 function getMetricValuesArray(factsData, tagOrAlias) {
-  // Проверяем, является ли tagOrAlias алиасом (есть в METRICS_CATALOG)
   const catalog = METRICS_CATALOG[tagOrAlias];
-  let tagName = tagOrAlias;
+  const taxonomies = ['us-gaap', 'ifrs-full', 'srt'];
   
-  // Определяем unitKey
-  let unitKey = null;
-  
-  const usGaap = factsData?.facts?.['us-gaap'];
-  if (!usGaap) return null;
+  const facts = factsData?.facts;
+  if (!facts) return null;
   
   if (catalog) {
-    // Это алиас — ищем по tags
-    let tagData = null;
-    for (const tag of catalog.tags) {
-      if (usGaap[tag]) {
-        tagData = usGaap[tag];
-        tagName = tag;
-        break;
+    // Это алиас — ищем по tags в каждой таксономии
+    for (const taxonomy of taxonomies) {
+      const taxData = facts[taxonomy];
+      if (!taxData) continue;
+      
+      for (const tag of catalog.tags) {
+        if (taxData[tag]) {
+          const units = taxData[tag].units;
+          const unitKey = Object.keys(units).find(k => k.includes('USD')) || 
+                          Object.keys(units).find(k => k.includes('shares')) ||
+                          Object.keys(units).find(k => k.includes('pure')) ||
+                          Object.keys(units)[0];
+          return units[unitKey] || null;
+        }
       }
     }
-    if (!tagData) return null;
-    
-    const units = tagData.units;
-    unitKey = Object.keys(units).find(k => k.includes('USD')) || 
-              Object.keys(units).find(k => k.includes('shares')) ||
-              Object.keys(units).find(k => k.includes('pure')) ||
-              Object.keys(units)[0];
-    if (!unitKey) return null;
-    return units[unitKey] || null;
+    return null;
   }
   
-  // Это прямой XBRL-тег — ищем напрямую
-  const tagData = usGaap[tagName];
-  if (!tagData) return null;
+  // Это прямой XBRL-тег — ищем в каждой таксономии
+  for (const taxonomy of taxonomies) {
+    const taxData = facts[taxonomy];
+    if (taxData && taxData[tagOrAlias]) {
+      const units = taxData[tagOrAlias].units;
+      const unitKey = Object.keys(units).find(k => k.includes('USD')) || 
+                      Object.keys(units).find(k => k.includes('shares')) ||
+                      Object.keys(units).find(k => k.includes('pure')) ||
+                      Object.keys(units)[0];
+      return units[unitKey] || null;
+    }
+  }
   
-  const units = tagData.units;
-  unitKey = Object.keys(units).find(k => k.includes('USD')) || 
-            Object.keys(units).find(k => k.includes('shares')) ||
-            Object.keys(units).find(k => k.includes('pure')) ||
-            Object.keys(units)[0];
-  if (!unitKey) return null;
-  return units[unitKey] || null;
+  return null;
 }
 
 // ============ ОСНОВНАЯ ЛОГИКА ПОИСКА ЗНАЧЕНИЯ ПО ТЕГУ ============
