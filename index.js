@@ -573,7 +573,6 @@ function getMetricValueInternal(factsData, metric, year, quarterParam, scale) {
       console.log('computeFound:', computeFound ? 'FOUND' : 'NOT FOUND');
       //=================КОНЕЦ ВСТАВКИ================
       
-      const computeFound = findTagData(factsData, [computeTag]);
       if (computeFound) {
         const computeTagData = computeFound.data;
         const computeResult = getValueFromTag(computeTagData, metric, year, quarterParam, isBalanceMetric);
