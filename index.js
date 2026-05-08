@@ -222,6 +222,17 @@ function findTagData(factsData, tags) {
   const taxonomies = ['us-gaap', 'ifrs-full', 'srt'];
   const facts = factsData?.facts;
   if (!facts) return null;
+
+  //============YFXFKJ DCNFDRB===========
+  console.log('findTagData: searching for', tags);
+  console.log('Available taxonomies:', Object.keys(facts));
+  for (const taxonomy of taxonomies) {
+    const taxData = facts[taxonomy];
+    if (taxData) {
+      console.log(`Taxonomy ${taxonomy} has keys:`, Object.keys(taxData).slice(0, 10));
+    }
+  }
+  //==============КОНЕЦ ВСТАВКИ============
   
   for (const taxonomy of taxonomies) {
     const taxData = facts[taxonomy];
@@ -540,6 +551,14 @@ function getMetricValueInternal(factsData, metric, year, quarterParam, scale) {
   if (tagData) {
     result = getValueFromTag(tagData, metric, year, quarterParam, isBalanceMetric);
   }
+
+  //=================НАЧАЛО ВСТАВКИ============
+  console.log('=== COMPUTE DEBUG ===');
+  console.log('metric:', metric);
+  console.log('result before compute:', result);
+  console.log('hasCompute:', !!(catalog.compute && catalog.compute.length > 0));
+  console.log('computeTags:', catalog.compute);
+  //=================КОНЕЦ ВСТАВКИ================
   
   // ========== 2. ЕСЛИ НЕ НАШЛИ И ЕСТЬ COMPUTE ==========
   if ((result === null || result === undefined) && catalog.compute && catalog.compute.length > 0) {
@@ -547,6 +566,13 @@ function getMetricValueInternal(factsData, metric, year, quarterParam, scale) {
     let validCount = 0;
     
     for (const computeTag of catalog.compute) {
+
+      //=================НАЧАЛО ВСТАВКИ============
+      console.log('Trying computeTag:', computeTag);
+      const computeFound = findTagData(factsData, [computeTag]);
+      console.log('computeFound:', computeFound ? 'FOUND' : 'NOT FOUND');
+      //=================КОНЕЦ ВСТАВКИ================
+      
       const computeFound = findTagData(factsData, [computeTag]);
       if (computeFound) {
         const computeTagData = computeFound.data;
