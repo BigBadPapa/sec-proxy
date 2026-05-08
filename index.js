@@ -82,9 +82,12 @@ const METRICS_CATALOG = {
   ocf: { tags: ['NetCashProvidedByUsedInOperatingActivities','NetCashProvidedByUsedInOperatingActivitiesContinuingOperations'], category: 'CashFlow', ttm: 'sum', ru: 'OCF' },
   icf: { tags: ['NetCashProvidedByUsedInInvestingActivities'], category: 'CashFlow', ttm: 'sum', ru: 'ICF' },
   fcf: { tags: ['NetCashProvidedByUsedInFinancingActivities'], category: 'CashFlow', ttm: 'sum', ru: 'FCF' },
+
+  netchangeincash: { tags: ['CashCashEquivalentsRestrictedCashAndRestrictedCashEquivalentsPeriodIncreaseDecreaseIncludingExchangeRateEffect'], compute: ['CashCashEquivalentsRestrictedCashAndRestrictedCashEquivalentsPeriodIncreaseDecreaseExcludingExchangeRateEffect', 'EffectOfExchangeRateOnCashCashEquivalentsRestrictedCashAndRestrictedCashEquivalents'], operation: 'sum', category: 'CashFlow', ttm: 'sum', ru: 'Чистое изменение денег' },
+  da: { tags: ['DepreciationDepletionAndAmortization', 'Depreciation'], category: 'CashFlow', ttm: 'sum', ru: 'Амортизация и износ' },
   
   netincomecf: { tags: ['NetIncomeLoss'], category: 'CashFlow', ttm: 'sum', ru: 'Чистая прибыль (для CF)' },
-  da: { tags: ['DepreciationDepletionAndAmortization', 'DepreciationAndAmortization','DepreciationAmortizationAndOther'], category: 'CashFlow', ttm: 'sum', ru: 'Амортизация и износ' },
+ 
   stockbasedcompensation: { tags: ['ShareBasedCompensation'], category: 'CashFlow', ttm: 'sum', ru: 'Вознаграждение акциями' },
   deferredtax: { tags: ['DeferredIncomeTaxExpenseBenefit'], category: 'CashFlow', ttm: 'sum', ru: 'Отложенные налоги' },
   workingcapitalchanges: { tags: ['IncreaseDecreaseInOperatingCapital'], category: 'CashFlow', ttm: 'sum', ru: 'Изменение оборотного капитала' },
@@ -106,8 +109,7 @@ const METRICS_CATALOG = {
   otherfinancingactivities: { tags: ['OtherFinancingActivities'], category: 'CashFlow', ttm: 'sum', ru: 'Прочие финансовые' },
   
   effectofexchangerate: { tags: ['EffectOfExchangeRateOnCashAndCashEquivalents'], category: 'CashFlow', ttm: 'sum', ru: 'Влияние курсов валют' },
-  netchangeincash: { tags: ['CashCashEquivalentsRestrictedCashAndRestrictedCashEquivalentsPeriodIncreaseDecreaseIncludingExchangeRateEffect'], compute: ['CashCashEquivalentsRestrictedCashAndRestrictedCashEquivalentsPeriodIncreaseDecreaseExcludingExchangeRateEffect', 'EffectOfExchangeRateOnCashCashEquivalentsRestrictedCashAndRestrictedCashEquivalents'], operation: 'sum', category: 'CashFlow', ttm: 'sum', ru: 'Чистое изменение денег' },
-  beginningcash: { tags: ['CashAndCashEquivalentsAtBeginningOfPeriod'], category: 'CashFlow', ttm: 'last', ru: 'Деньги на начало' },
+  eginningcash: { tags: ['CashAndCashEquivalentsAtBeginningOfPeriod'], category: 'CashFlow', ttm: 'last', ru: 'Деньги на начало' },
   endingcash: { tags: ['CashAndCashEquivalentsAtEndOfPeriod'], category: 'CashFlow', ttm: 'last', ru: 'Деньги на конец' },
 
   // Per Share
