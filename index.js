@@ -79,7 +79,7 @@ const METRICS_CATALOG = {
   totalequity: { tags: ['StockholdersEquity', 'PartnersCapital', 'MembersEquity', 'Equity'], category: 'Equity', ttm: 'last', ru: 'ВСЕГО КАПИТАЛ' },
 
   // Cash Flow
-  ocf: { tags: ['NetCashProvidedByUsedInOperatingActivities','NetCashProvidedByUsedInOperatingActivitiesContinuingOperations', 'CashFlowsFromUsedInOperatingActivities'], category: 'CashFlow', ttm: 'sum', ru: 'OCF' },
+  ocf: { tags: ['NetCashProvidedByUsedInOperatingActivities', 'NetCashProvidedByUsedInOperatingActivitiesContinuingOperations', 'CashFlowsFromUsedInOperatingActivities'], category: 'CashFlow', ttm: 'sum', ru: 'OCF' },
   icf: { tags: ['NetCashProvidedByUsedInInvestingActivities'], category: 'CashFlow', ttm: 'sum', ru: 'ICF' },
   fcf: { tags: ['NetCashProvidedByUsedInFinancingActivities'], category: 'CashFlow', ttm: 'sum', ru: 'FCF' },
 
@@ -109,7 +109,7 @@ const METRICS_CATALOG = {
   otherfinancingactivities: { tags: ['OtherFinancingActivities'], category: 'CashFlow', ttm: 'sum', ru: 'Прочие финансовые' },
   
   effectofexchangerate: { tags: ['EffectOfExchangeRateOnCashAndCashEquivalents'], category: 'CashFlow', ttm: 'sum', ru: 'Влияние курсов валют' },
-  eginningcash: { tags: ['CashAndCashEquivalentsAtBeginningOfPeriod'], category: 'CashFlow', ttm: 'last', ru: 'Деньги на начало' },
+  beginningcash: { tags: ['CashAndCashEquivalentsAtBeginningOfPeriod'], category: 'CashFlow', ttm: 'last', ru: 'Деньги на начало' },
   endingcash: { tags: ['CashAndCashEquivalentsAtEndOfPeriod'], category: 'CashFlow', ttm: 'last', ru: 'Деньги на конец' },
 
   // Per Share
@@ -216,6 +216,25 @@ function parseQuarterString(quarterStr) {
   return null;
 }
 
+// ============ ЕДИНЫЙ ПОИСК ПО ТАКСОНОМИЯМ ============
+
+function findTagData(factsData, tags) {
+  const taxonomies = ['us-gaap', 'ifrs-full', 'srt'];
+  const facts = factsData?.facts;
+  if (!facts) return null;
+  
+  for (const taxonomy of taxonomies) {
+    const taxData = facts[taxonomy];
+    if (!taxData) continue;
+    for (const tag of tags) {
+      if (taxData[tag]) {
+        return { taxonomy, tag, data: taxData[tag] };
+      }
+    }
+  }
+  return null;
+}
+
 // ============ FETCH С RETRY ============
 async function fetchWithRetry(url, options, maxRetries = 3) {
   for (let i = 0; i < maxRetries; i++) {
@@ -272,57 +291,35 @@ async function getCompanyFacts(cik) {
 }
 
 // ============ ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ДЛЯ МЕТРИК ============
+
 function getMetricValuesArray(factsData, tagOrAlias) {
   const catalog = METRICS_CATALOG[tagOrAlias];
-  const taxonomies = ['us-gaap', 'ifrs-full', 'srt'];
-  
   const facts = factsData?.facts;
   if (!facts) return null;
-
-  // ========== НАЧАЛО ВСТАВКИ ==========
-  console.log('Searching for:', tagOrAlias);
-  for (const taxonomy of taxonomies) {
-    const taxData = facts[taxonomy];
-    if (taxData && taxData[tagOrAlias]) {
-      console.log('FOUND in:', taxonomy);
-    }
-  }
-  // ========== КОНЕЦ ВСТАВКИ ==========
   
   if (catalog) {
-    // Это алиас — ищем по tags в каждой таксономии
-    for (const taxonomy of taxonomies) {
-      const taxData = facts[taxonomy];
-      if (!taxData) continue;
-      
-      for (const tag of catalog.tags) {
-        if (taxData[tag]) {
-          const units = taxData[tag].units;
-          const unitKey = Object.keys(units).find(k => k.includes('USD')) || 
-                          Object.keys(units).find(k => k.includes('shares')) ||
-                          Object.keys(units).find(k => k.includes('pure')) ||
-                          Object.keys(units)[0];
-          return units[unitKey] || null;
-        }
-      }
-    }
-    return null;
+    // Это алиас — ищем через findTagData
+    const found = findTagData(factsData, catalog.tags);
+    if (!found) return null;
+    
+    const units = found.data.units;
+    const unitKey = Object.keys(units).find(k => k.includes('USD')) || 
+                    Object.keys(units).find(k => k.includes('shares')) ||
+                    Object.keys(units).find(k => k.includes('pure')) ||
+                    Object.keys(units)[0];
+    return units[unitKey] || null;
   }
   
-  // Это прямой XBRL-тег — ищем в каждой таксономии
-  for (const taxonomy of taxonomies) {
-    const taxData = facts[taxonomy];
-    if (taxData && taxData[tagOrAlias]) {
-      const units = taxData[tagOrAlias].units;
-      const unitKey = Object.keys(units).find(k => k.includes('USD')) || 
-                      Object.keys(units).find(k => k.includes('shares')) ||
-                      Object.keys(units).find(k => k.includes('pure')) ||
-                      Object.keys(units)[0];
-      return units[unitKey] || null;
-    }
-  }
+  // Это прямой XBRL-тег — ищем через findTagData
+  const found = findTagData(factsData, [tagOrAlias]);
+  if (!found) return null;
   
-  return null;
+  const units = found.data.units;
+  const unitKey = Object.keys(units).find(k => k.includes('USD')) || 
+                  Object.keys(units).find(k => k.includes('shares')) ||
+                  Object.keys(units).find(k => k.includes('pure')) ||
+                  Object.keys(units)[0];
+  return units[unitKey] || null;
 }
 
 // ============ ОСНОВНАЯ ЛОГИКА ПОИСКА ЗНАЧЕНИЯ ПО ТЕГУ ============
@@ -530,18 +527,13 @@ function getMetricValueInternal(factsData, metric, year, quarterParam, scale) {
   const catalog = METRICS_CATALOG[metric];
   if (!catalog) return null;
   
-  const usGaap = factsData?.facts?.['us-gaap'];
-  if (!usGaap) return null;
-  
   const isBalanceMetric = catalog.ttm === 'last';
   
   // ========== 1. ПОИСК ЧЕРЕЗ ПРЯМОЙ ТЕГ ==========
   let tagData = null;
-  for (const tag of catalog.tags) {
-    if (usGaap[tag]) {
-      tagData = usGaap[tag];
-      break;
-    }
+  const found = findTagData(factsData, catalog.tags);
+  if (found) {
+    tagData = found.data;
   }
   
   let result = null;
@@ -555,8 +547,9 @@ function getMetricValueInternal(factsData, metric, year, quarterParam, scale) {
     let validCount = 0;
     
     for (const computeTag of catalog.compute) {
-      if (usGaap[computeTag]) {
-        const computeTagData = usGaap[computeTag];
+      const computeFound = findTagData(factsData, [computeTag]);
+      if (computeFound) {
+        const computeTagData = computeFound.data;
         const computeResult = getValueFromTag(computeTagData, metric, year, quarterParam, isBalanceMetric);
         
         if (computeResult !== null && computeResult !== undefined) {
