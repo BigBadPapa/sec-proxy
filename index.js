@@ -353,8 +353,15 @@ function getValueFromTag(tagData, metricName, year, quarterParam, isBalanceMetri
   }
   // Годовой отчёт
   else if (quarterParam === undefined || quarterParam === 0 || quarterParam === 'annual' || quarterParam === 'год') {
-    const candidates = sortedValues.filter(v => v.fy === year && v.form === '10-K');
-    const annual = candidates[0];
+    const formsToTry = ['10-K', '20-F', '40-F'];
+    let annual = null;
+    for (const form of formsToTry) {
+      const candidates = sortedValues.filter(v => v.fy === year && v.form === form);
+      if (candidates.length > 0) {
+        annual = candidates[0];
+        break;
+      }
+    }
     result = annual?.val || null;
   }
   // Квартальные данные
@@ -369,8 +376,16 @@ function getValueFromTag(tagData, metricName, year, quarterParam, isBalanceMetri
       const targetFp = `Q${quarterInfo.num}`;
       
       if (quarterInfo.num === 4) {
-        const candidates = sortedValues.filter(v => v.fy === year && v.form === '10-K');
-        const annual10K = candidates[0];
+        // Для Q4 баланса — ищем годовой отчёт
+        const formsToTry = ['10-K', '20-F', '40-F'];
+        let annual10K = null;
+        for (const form of formsToTry) {
+          const candidates = sortedValues.filter(v => v.fy === year && v.form === form);
+          if (candidates.length > 0) {
+            annual10K = candidates[0];
+            break;
+          }
+        }
         result = annual10K?.val || null;
       } else {
         const candidates = sortedValues.filter(v => v.fy === year && v.fp === targetFp);
@@ -382,14 +397,35 @@ function getValueFromTag(tagData, metricName, year, quarterParam, isBalanceMetri
       // Q4 — особый случай
       if (quarterInfo.num === 4) {
         if (quarterInfo.type === 'ytd') {
-          // 4q = 10-K
-          const candidates = sortedValues.filter(v => v.fy === year && v.form === '10-K');
-          const annual10K = candidates[0];
+          // 4q = годовой отчёт
+          const formsToTry = ['10-K', '20-F', '40-F'];
+          let annual10K = null;
+          for (const form of formsToTry) {
+            const candidates = sortedValues.filter(v => v.fy === year && v.form === form);
+            if (candidates.length > 0) {
+              annual10K = candidates[0];
+              break;
+            }
+          }
           result = annual10K?.val || null;
         } else {
-          // q4 = 10-K − 3q
-          const annual10K = sortedValues.find(v => v.fy === year && v.form === '10-K');
-          const ytdQ3 = sortedValues.find(v => v.fy === year && v.fp === 'Q3' && v.form === '10-Q');
+          // q4 = 10-K − 3q (поддержка 20-F, 40-F)
+          // Ищем годовой отчёт
+          const annualForms = ['10-K', '20-F', '40-F'];
+          let annual10K = null;
+          for (const form of annualForms) {
+            annual10K = sortedValues.find(v => v.fy === year && v.form === form);
+            if (annual10K) break;
+          }
+          
+          // Ищем YTD Q3 (10-Q или 6-K)
+          const quarterForms = ['10-Q', '6-K'];
+          let ytdQ3 = null;
+          for (const form of quarterForms) {
+            ytdQ3 = sortedValues.find(v => v.fy === year && v.fp === 'Q3' && v.form === form);
+            if (ytdQ3) break;
+          }
+          
           if (annual10K && ytdQ3) {
             result = annual10K.val - ytdQ3.val;
           } else {
@@ -402,11 +438,17 @@ function getValueFromTag(tagData, metricName, year, quarterParam, isBalanceMetri
         const targetFp = `Q${quarterInfo.num}`;
         
         if (quarterInfo.type === 'quarter') {
-          const candidates = sortedValues.filter(v => 
-            v.form === '10-Q' && 
-            v.fy === year && 
-            v.fp === targetFp
-          );
+          // q1, q2, q3: ищем 10-Q или 6-K
+          const formsToTry = ['10-Q', '6-K'];
+          let candidates = [];
+          for (const form of formsToTry) {
+            candidates = sortedValues.filter(v => 
+              v.form === form && 
+              v.fy === year && 
+              v.fp === targetFp
+            );
+            if (candidates.length > 0) break;
+          }
           
           // Ищем запись за 3 месяца (80-100 дней)
           let quarterValue = candidates.find(v => {
@@ -424,7 +466,7 @@ function getValueFromTag(tagData, metricName, year, quarterParam, isBalanceMetri
             if (ytdCurrent) {
               const prevFp = `Q${quarterInfo.num - 1}`;
               const ytdPrev = sortedValues.find(v => 
-                v.form === '10-Q' && 
+                v.form === ytdCurrent.form && 
                 v.fy === ytdCurrent.fy && 
                 v.fp === prevFp
               );
@@ -440,11 +482,17 @@ function getValueFromTag(tagData, metricName, year, quarterParam, isBalanceMetri
           result = quarterValue?.val || null;
         }
         else if (quarterInfo.type === 'ytd') {
-          const candidates = sortedValues.filter(v => 
-            v.form === '10-Q' && 
-            v.fy === year && 
-            v.fp === targetFp
-          );
+          // 1q, 2q, 3q: YTD
+          const formsToTry = ['10-Q', '6-K'];
+          let candidates = [];
+          for (const form of formsToTry) {
+            candidates = sortedValues.filter(v => 
+              v.form === form && 
+              v.fy === year && 
+              v.fp === targetFp
+            );
+            if (candidates.length > 0) break;
+          }
           
           let minDays = 0, maxDays = 0;
           if (quarterInfo.num === 1) {
@@ -566,20 +614,21 @@ function getTTMValue(factsData, metricName, scale) {
   
   if (!values) return null;
   
+  // Находим последний отчёт (поддерживаем 10-K, 20-F, 40-F, 10-Q, 6-K)
   const allReports = values.filter(v => 
-    (v.form === '10-K' || v.form === '10-Q') && v.filed
+    (v.form === '10-K' || v.form === '10-Q' || v.form === '20-F' || v.form === '40-F' || v.form === '6-K') && v.filed
   );
   const lastReport = allReports.sort((a, b) => new Date(b.filed) - new Date(a.filed))[0];
   
   if (!lastReport) return null;
   
-  // Если последний отчёт — 10-K, возвращаем его значение
-  if (lastReport.form === '10-K') {
+  // Если последний отчёт — годовой (10-K, 20-F, 40-F)
+  if (lastReport.form === '10-K' || lastReport.form === '20-F' || lastReport.form === '40-F') {
     const annualValue = getMetricValueInternal(factsData, metricName, lastReport.fy, undefined, null);
     return applyScale(annualValue, scale);
   }
   
-  // Если последний отчёт — 10-Q, собираем 4 квартала подряд
+  // Если последний отчёт — 10-Q или 6-K, собираем 4 квартала подряд
   const lastQuarterNum = parseInt(lastReport.fp.substring(1));
   const lastYear = lastReport.fy;
   
