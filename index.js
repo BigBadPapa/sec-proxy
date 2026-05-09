@@ -423,6 +423,12 @@ function getValueFromTag(tagData, metricName, year, quarterParam, isBalanceMetri
             }
           }
           result = annual10K?.val || null;
+          
+          // ========== ЛОГИРОВАНИЕ ==========
+          console.log('=== 4q (YTD) DEBUG ===');
+          console.log('year:', year);
+          console.log('annual10K:', annual10K ? { form: annual10K.form, fy: annual10K.fy, val: annual10K.val } : 'NOT FOUND');
+          // ========== КОНЕЦ ЛОГИРОВАНИЯ ==========
         } else {
           // q4 = 10-K − 3q (поддержка 20-F, 40-F)
           // Ищем годовой отчёт
@@ -440,6 +446,13 @@ function getValueFromTag(tagData, metricName, year, quarterParam, isBalanceMetri
             ytdQ3 = sortedValues.find(v => v.fy === year && v.fp === 'Q3' && v.form === form);
             if (ytdQ3) break;
           }
+          
+          // ========== ЛОГИРОВАНИЕ ==========
+          console.log('=== q4 (Quarter) DEBUG ===');
+          console.log('year:', year);
+          console.log('annual10K:', annual10K ? { form: annual10K.form, fy: annual10K.fy, val: annual10K.val } : 'NOT FOUND');
+          console.log('ytdQ3:', ytdQ3 ? { form: ytdQ3.form, fy: ytdQ3.fy, val: ytdQ3.val, fp: ytdQ3.fp } : 'NOT FOUND');
+          // ========== КОНЕЦ ЛОГИРОВАНИЯ ==========
           
           if (annual10K && ytdQ3) {
             result = annual10K.val - ytdQ3.val;
@@ -464,6 +477,13 @@ function getValueFromTag(tagData, metricName, year, quarterParam, isBalanceMetri
             );
             if (candidates.length > 0) break;
           }
+          
+          // ========== ЛОГИРОВАНИЕ ==========
+          console.log(`=== q${quarterInfo.num} (Quarter) DEBUG ===`);
+          console.log('year:', year);
+          console.log('candidates count:', candidates.length);
+          console.log('candidates:', candidates.map(v => ({ form: v.form, fy: v.fy, val: v.val, start: v.start, end: v.end })));
+          // ========== КОНЕЦ ЛОГИРОВАНИЯ ==========
           
           // Ищем запись за 3 месяца (80-100 дней)
           let quarterValue = candidates.find(v => {
@@ -508,6 +528,13 @@ function getValueFromTag(tagData, metricName, year, quarterParam, isBalanceMetri
             );
             if (candidates.length > 0) break;
           }
+          
+          // ========== ЛОГИРОВАНИЕ ==========
+          console.log(`=== ${quarterInfo.num}q (YTD) DEBUG ===`);
+          console.log('year:', year);
+          console.log('candidates count:', candidates.length);
+          console.log('candidates:', candidates.map(v => ({ form: v.form, fy: v.fy, val: v.val, start: v.start, end: v.end })));
+          // ========== КОНЕЦ ЛОГИРОВАНИЯ ==========
           
           let minDays = 0, maxDays = 0;
           if (quarterInfo.num === 1) {
