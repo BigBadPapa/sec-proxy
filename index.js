@@ -551,14 +551,17 @@ function getMetricValueInternal(factsData, metric, year, quarterParam, scale) {
   if (tagData) {
     result = getValueFromTag(tagData, metric, year, quarterParam, isBalanceMetric);
   }
-
-  //=================НАЧАЛО ВСТАВКИ============
+  
+  // ========== ЛОГИРОВАНИЕ ДЛЯ COMPUTE ==========
   console.log('=== COMPUTE DEBUG ===');
   console.log('metric:', metric);
   console.log('result before compute:', result);
   console.log('hasCompute:', !!(catalog.compute && catalog.compute.length > 0));
   console.log('computeTags:', catalog.compute);
-  //=================КОНЕЦ ВСТАВКИ================
+  console.log('isBalanceMetric:', isBalanceMetric);
+  console.log('year:', year);
+  console.log('quarterParam:', quarterParam);
+  // ========== КОНЕЦ ЛОГИРОВАНИЯ ==========
   
   // ========== 2. ЕСЛИ НЕ НАШЛИ И ЕСТЬ COMPUTE ==========
   if ((result === null || result === undefined) && catalog.compute && catalog.compute.length > 0) {
@@ -566,16 +569,21 @@ function getMetricValueInternal(factsData, metric, year, quarterParam, scale) {
     let validCount = 0;
     
     for (const computeTag of catalog.compute) {
-
-      //=================НАЧАЛО ВСТАВКИ============
+      // ========== ЛОГИРОВАНИЕ ДЛЯ КАЖДОГО COMPUTE ТЕГА ==========
       console.log('Trying computeTag:', computeTag);
       const computeFound = findTagData(factsData, [computeTag]);
       console.log('computeFound:', computeFound ? 'FOUND' : 'NOT FOUND');
-      //=================КОНЕЦ ВСТАВКИ================
+      if (computeFound) {
+        console.log('computeFound.taxonomy:', computeFound.taxonomy);
+        console.log('computeFound.tag:', computeFound.tag);
+      }
+      // ========== КОНЕЦ ЛОГИРОВАНИЯ ==========
       
       if (computeFound) {
         const computeTagData = computeFound.data;
         const computeResult = getValueFromTag(computeTagData, metric, year, quarterParam, isBalanceMetric);
+        
+        console.log('computeResult:', computeResult);
         
         if (computeResult !== null && computeResult !== undefined) {
           if (catalog.operation === 'sum') {
@@ -590,14 +598,17 @@ function getMetricValueInternal(factsData, metric, year, quarterParam, scale) {
       }
     }
     
+    console.log('Final sum:', sum, 'validCount:', validCount);
+    
     if (validCount > 0 && sum !== null) {
       result = sum;
     }
   }
   
+  console.log('Final result:', result);
+  
   return result !== null ? applyScale(result, scale) : null;
 }
-
 // ============ ОСНОВНАЯ ФУНКЦИЯ ПОИСКА (ОБЁРТКА) ============
 function getMetricValue(factsData, metric, year, quarterParam, scale) {
   // TTM: нет года и нет квартала
