@@ -216,33 +216,66 @@ function parseQuarterString(quarterStr) {
   return null;
 }
 
-// ============ ЕДИНЫЙ ПОИСК ПО ТАКСОНОМИЯМ ============
+// ============ НОВОЕ: ГЛУБОКИЙ ПОИСК ТЕГА ============
+function deepSearchTag(obj, targetTag, currentPath = '', depth = 0) {
+  const MAX_DEPTH = 5; // Ограничиваем глубину поиска
+  
+  if (!obj || typeof obj !== 'object') return null;
+  if (depth > MAX_DEPTH) return null;
+  
+  // Прямое совпадение на текущем уровне (проверяем наличие units или label)
+  if (obj[targetTag] && (obj[targetTag].label === targetTag || obj[targetTag].units)) {
+    return { data: obj[targetTag], path: currentPath };
+  }
+  
+  // Рекурсивный поиск
+  for (const key in obj) {
+    if (obj.hasOwnProperty(key) && typeof obj[key] === 'object') {
+      const result = deepSearchTag(obj[key], targetTag, currentPath ? `${currentPath}.${key}` : key, depth + 1);
+      if (result) return result;
+    }
+  }
+  
+  return null;
+}
 
+// ============ ИЗМЕНЕНО: ЕДИНЫЙ ПОИСК ПО ТАКСОНОМИЯМ (с глубоким поиском) ============
 function findTagData(factsData, tags) {
   const taxonomies = ['us-gaap', 'ifrs-full', 'srt'];
   const facts = factsData?.facts;
   if (!facts) return null;
 
-  //============YFXFKJ DCNFDRB===========
   console.log('findTagData: searching for', tags);
   console.log('Available taxonomies:', Object.keys(facts));
-  for (const taxonomy of taxonomies) {
-    const taxData = facts[taxonomy];
-    if (taxData) {
-      console.log(`Taxonomy ${taxonomy} has keys:`, Object.keys(taxData).slice(0, 10));
-    }
-  }
-  //==============КОНЕЦ ВСТАВКИ============
   
   for (const taxonomy of taxonomies) {
     const taxData = facts[taxonomy];
     if (!taxData) continue;
+    
     for (const tag of tags) {
+      // 1. Прямой поиск (быстрее всего)
       if (taxData[tag]) {
+        console.log(`Found direct match: ${taxonomy}.${tag}`);
         return { taxonomy, tag, data: taxData[tag] };
+      }
+      
+      // 2. Поиск с префиксом таксономии (ifrs-full:TagName)
+      const prefixedTag = `${taxonomy}:${tag}`;
+      if (taxData[prefixedTag]) {
+        console.log(`Found prefixed match: ${taxonomy}.${prefixedTag}`);
+        return { taxonomy, tag: prefixedTag, data: taxData[prefixedTag] };
+      }
+      
+      // 3. НОВОЕ: Глубокий рекурсивный поиск (для вложенных структур)
+      const deepResult = deepSearchTag(taxData, tag);
+      if (deepResult) {
+        console.log(`Found deep match in ${taxonomy}.${deepResult.path}`);
+        return { taxonomy, tag, data: deepResult.data };
       }
     }
   }
+  
+  console.log(`NOT FOUND for tags:`, tags);
   return null;
 }
 
@@ -333,7 +366,7 @@ function getMetricValuesArray(factsData, tagOrAlias) {
   return units[unitKey] || null;
 }
 
-// ============ ОСНОВНАЯ ЛОГИКА ПОИСКА ЗНАЧЕНИЯ ПО ТЕГУ ============
+// ============ ИЗМЕНЕНО: ОСНОВНАЯ ЛОГИКА ПОИСКА ЗНАЧЕНИЯ ПО ТЕГУ (с копией массива) ============
 function getValueFromTag(tagData, metricName, year, quarterParam, isBalanceMetric) {
   const catalog = METRICS_CATALOG[metricName];
   if (!catalog) return null;
@@ -348,12 +381,12 @@ function getValueFromTag(tagData, metricName, year, quarterParam, isBalanceMetri
   
   let result = null;
   
-  // Сортируем values в зависимости от типа метрики
-  let sortedValues = values;
+  // ИЗМЕНЕНО: используем копию массива для сортировки, чтобы не мутировать оригинал
+  let sortedValues;
   if (isBalanceMetric) {
-    sortedValues = values.sort((a, b) => new Date(b.end) - new Date(a.end));
+    sortedValues = [...values].sort((a, b) => new Date(b.end) - new Date(a.end));
   } else {
-    sortedValues = values.sort((a, b) => new Date(b.start) - new Date(a.start));
+    sortedValues = [...values].sort((a, b) => new Date(b.start) - new Date(a.start));
   }
   
   // TTM
@@ -533,7 +566,7 @@ function getValueFromTag(tagData, metricName, year, quarterParam, isBalanceMetri
   return result;
 }
 
-// ============ ОСНОВНАЯ ЛОГИКА ПОИСКА (ВНУТРЕННЯЯ) ============
+// ============ ИЗМЕНЕНО: ОСНОВНАЯ ЛОГИКА ПОИСКА (ВНУТРЕННЯЯ) с улучшенным логированием ============
 function getMetricValueInternal(factsData, metric, year, quarterParam, scale) {
   const catalog = METRICS_CATALOG[metric];
   if (!catalog) return null;
@@ -552,30 +585,33 @@ function getMetricValueInternal(factsData, metric, year, quarterParam, scale) {
     result = getValueFromTag(tagData, metric, year, quarterParam, isBalanceMetric);
   }
 
-  //=================НАЧАЛО ВСТАВКИ============
   console.log('=== COMPUTE DEBUG ===');
   console.log('metric:', metric);
   console.log('result before compute:', result);
   console.log('hasCompute:', !!(catalog.compute && catalog.compute.length > 0));
   console.log('computeTags:', catalog.compute);
-  //=================КОНЕЦ ВСТАВКИ================
   
   // ========== 2. ЕСЛИ НЕ НАШЛИ И ЕСТЬ COMPUTE ==========
   if ((result === null || result === undefined) && catalog.compute && catalog.compute.length > 0) {
+    console.log(`=== COMPUTE PROCESSING for ${metric} ===`);
+    console.log(`Compute tags: ${catalog.compute.join(', ')}`);
+    
     let sum = null;
     let validCount = 0;
+    const computeResults = [];
     
     for (const computeTag of catalog.compute) {
-
-      //=================НАЧАЛО ВСТАВКИ============
-      console.log('Trying computeTag:', computeTag);
+      console.log(`Trying computeTag: ${computeTag}`);
+      
+      // Пробуем найти тег с глубоким поиском
       const computeFound = findTagData(factsData, [computeTag]);
-      console.log('computeFound:', computeFound ? 'FOUND' : 'NOT FOUND');
-      //=================КОНЕЦ ВСТАВКИ================
+      console.log(`computeFound: ${computeFound ? 'FOUND in ' + computeFound.taxonomy : 'NOT FOUND'}`);
       
       if (computeFound) {
         const computeTagData = computeFound.data;
         const computeResult = getValueFromTag(computeTagData, metric, year, quarterParam, isBalanceMetric);
+        console.log(`computeResult for ${computeTag}: ${computeResult}`);
+        computeResults.push({ tag: computeTag, result: computeResult, taxonomy: computeFound.taxonomy });
         
         if (computeResult !== null && computeResult !== undefined) {
           if (catalog.operation === 'sum') {
@@ -590,8 +626,13 @@ function getMetricValueInternal(factsData, metric, year, quarterParam, scale) {
       }
     }
     
+    console.log(`Compute summary - validCount: ${validCount}, sum: ${sum}, results:`, computeResults);
+    
     if (validCount > 0 && sum !== null) {
       result = sum;
+      console.log(`COMPUTE SUCCESS: ${metric} = ${sum}`);
+    } else {
+      console.log(`COMPUTE FAILED: no valid components found for ${metric}`);
     }
   }
   
@@ -608,7 +649,7 @@ function getMetricValue(factsData, metric, year, quarterParam, scale) {
   return getMetricValueInternal(factsData, metric, year, quarterParam, scale);
 }
 
-// ============ TTM ФУНКЦИЯ ============
+// ============ ИЗМЕНЕНО: TTM ФУНКЦИЯ (с копией массива) ============
 function getTTMValue(factsData, metricName, scale) {
   const catalog = METRICS_CATALOG[metricName];
   const ttmType = catalog?.ttm || 'sum';
@@ -624,7 +665,8 @@ function getTTMValue(factsData, metricName, scale) {
     }
     
     if (!values) return null;
-    const sorted = values.sort((a, b) => new Date(b.end) - new Date(a.end));
+    // ИЗМЕНЕНО: используем копию массива
+    const sorted = [...values].sort((a, b) => new Date(b.end) - new Date(a.end));
     return applyScale(sorted[0]?.val, scale);
   }
   
@@ -639,8 +681,8 @@ function getTTMValue(factsData, metricName, scale) {
   
   if (!values) return null;
   
-  // Находим последний отчёт (поддерживаем 10-K, 20-F, 40-F, 10-Q, 6-K)
-  const allReports = values.filter(v => 
+  // ИЗМЕНЕНО: используем копию массива
+  const allReports = [...values].filter(v => 
     (v.form === '10-K' || v.form === '10-Q' || v.form === '20-F' || v.form === '40-F' || v.form === '6-K') && v.filed
   );
   const lastReport = allReports.sort((a, b) => new Date(b.filed) - new Date(a.filed))[0];
@@ -1031,6 +1073,79 @@ app.get('/company-tickers', async (req, res) => {
   }
 });
 
+// ============ НОВОЕ: DEBUG ENDPOINT ============
+app.get('/debug-tags/:ticker', async (req, res) => {
+  try {
+    const ticker = req.params.ticker.toUpperCase();
+    const searchTag = req.query.tag; // опционально: искать конкретный тег
+    const maxDepth = req.query.depth ? parseInt(req.query.depth) : 3;
+    
+    const cik = await getCIK(ticker);
+    if (!cik) return res.status(404).json({ error: 'Тикер не найден' });
+    
+    const factsData = await getCompanyFacts(cik);
+    if (!factsData) return res.status(500).json({ error: 'Ошибка получения данных' });
+    
+    const result = {
+      ticker,
+      cik,
+      availableTaxonomies: Object.keys(factsData.facts || {}),
+      metricsToShow: {}
+    };
+    
+    // Если указан конкретный тег
+    if (searchTag) {
+      const found = findTagData(factsData, [searchTag]);
+      result.searchTag = searchTag;
+      result.found = !!found;
+      if (found) {
+        result.location = `${found.taxonomy}.${found.tag}`;
+        // Показываем первые 5 значений для понимания структуры
+        const units = found.data.units;
+        const sampleValues = [];
+        for (const unit in units) {
+          sampleValues.push({
+            unit,
+            count: units[unit].length,
+            firstThreeValues: units[unit].slice(0, 3).map(v => ({
+              end: v.end,
+              val: v.val,
+              form: v.form,
+              fp: v.fp
+            }))
+          });
+        }
+        result.sampleData = sampleValues;
+      }
+    } 
+    // Иначе показываем все теги (ограничиваем для производительности)
+    else {
+      const taxonomies = ['us-gaap', 'ifrs-full', 'srt'];
+      for (const taxonomy of taxonomies) {
+        const taxData = factsData.facts?.[taxonomy];
+        if (taxData) {
+          const tags = Object.keys(taxData).slice(0, 50); // первые 50 тегов
+          result.metricsToShow[taxonomy] = {
+            totalTags: Object.keys(taxData).length,
+            sampleTags: tags,
+            // Для compute-метрик показываем конкретные теги
+            searchHints: {
+              netchangeincash: tags.filter(t => 
+                t.includes('Cash') && (t.includes('Increase') || t.includes('Decrease'))
+              ).slice(0, 10)
+            }
+          };
+        }
+      }
+    }
+    
+    res.json(result);
+    
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 app.get('/ping', (req, res) => {
   res.json({ status: 'alive', timestamp: new Date().toISOString() });
 });
@@ -1047,5 +1162,6 @@ app.listen(PORT, () => {
   console.log(`  GET /actions/reports/:ticker`);
   console.log(`  GET /companyfacts/:ticker`);
   console.log(`  GET /company-tickers`);
+  console.log(`  GET /debug-tags/:ticker (NEW - debug endpoint)`);
   console.log(`  GET /ping`);
 });
