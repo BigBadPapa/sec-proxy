@@ -83,7 +83,7 @@ const METRICS_CATALOG = {
   icf: { tags: ['NetCashProvidedByUsedInInvestingActivities', 'CashFlowsFromUsedInInvestingActivities'], category: 'CashFlow', ttm: 'sum', ru: 'ICF' },
   fcf: { tags: ['NetCashProvidedByUsedInFinancingActivities', 'CashFlowsFromUsedInFinancingActivities'], category: 'CashFlow', ttm: 'sum', ru: 'FCF' },
 
-  netchangeincash: { tags: ['CashCashEquivalentsRestrictedCashAndRestrictedCashEquivalentsPeriodIncreaseDecreaseIncludingExchangeRateEffect'], compute: ['CashCashEquivalentsRestrictedCashAndRestrictedCashEquivalentsPeriodIncreaseDecreaseExcludingExchangeRateEffect', 'EffectOfExchangeRateOnCashCashEquivalentsRestrictedCashAndRestrictedCashEquivalents', 'IncreaseDecreaseInCashAndCashEquivalentsBeforeEffectOfExchangeRateChanges', 'EffectOfExchangeRateChangesOnCashAndCashEquivalents'], operation: 'sum', category: 'CashFlow', ttm: 'sum', ru: 'Чистое изменение денег'  },
+  netchangeincash: { tags: ['CashCashEquivalentsRestrictedCashAndRestrictedCashEquivalentsPeriodIncreaseDecreaseIncludingExchangeRateEffect'], compute: ['CashCashEquivalentsRestrictedCashAndRestrictedCashEquivalentsPeriodIncreaseDecreaseExcludingExchangeRateEffect', 'EffectOfExchangeRateOnCashCashEquivalentsRestrictedCashAndRestrictedCashEquivalents', 'IncreaseDecreaseInCashAndCashEquivalentsBeforeEffectOfExchangeRateChanges', 'EffectOfExchangeRateChangesOnCashAndCashEquivalents'], operation: 'sum', category: 'CashFlow', ttm: 'sum', ru: 'Чистое изменение денег' },
   da: { tags: ['DepreciationDepletionAndAmortization', 'Depreciation', 'DepreciationAndAmortization', 'DepreciationAmortizationAndAccretionNet', 'DepreciationAndAmortizationExcludingDebtIssuanceCosts', 'AmortizationOfIntangibleAssets', 'DepreciationAmortizationDecommissioning'], category: 'CashFlow', ttm: 'sum', ru: 'Амортизация и износ' },
   
   netincomecf: { tags: ['NetIncomeLoss'], category: 'CashFlow', ttm: 'sum', ru: 'Чистая прибыль (для CF)' },
@@ -135,8 +135,8 @@ const RU_ALIASES = {
   деньги: 'cashandequivalents',
   долг: 'longtermdebt',
   акции: 'sharesoutstanding',
-  ocf: 'operatingcashflow',
-  fcf: 'financingcashflow',
+  ocf: 'ocf',
+  fcf: 'fcf',
   капекс: 'capex',
   амортизация: 'da'
 };
@@ -223,17 +223,6 @@ function findTagData(factsData, tags) {
   const facts = factsData?.facts;
   if (!facts) return null;
 
-  //============YFXFKJ DCNFDRB===========
-  console.log('findTagData: searching for', tags);
-  console.log('Available taxonomies:', Object.keys(facts));
-  for (const taxonomy of taxonomies) {
-    const taxData = facts[taxonomy];
-    if (taxData) {
-      console.log(`Taxonomy ${taxonomy} has keys:`, Object.keys(taxData).slice(0, 10));
-    }
-  }
-  //==============КОНЕЦ ВСТАВКИ============
-  
   for (const taxonomy of taxonomies) {
     const taxData = facts[taxonomy];
     if (!taxData) continue;
@@ -348,12 +337,20 @@ function getValueFromTag(tagData, metricName, year, quarterParam, isBalanceMetri
   
   let result = null;
   
-  // Сортируем values в зависимости от типа метрики
-  let sortedValues = values;
+  // Сортируем values в зависимости от типа метрики (иммутабельно)
+  let sortedValues;
   if (isBalanceMetric) {
-    sortedValues = values.sort((a, b) => new Date(b.end) - new Date(a.end));
+    sortedValues = [...values].sort((a, b) => {
+      const endA = a.end ? new Date(a.end).getTime() : 0;
+      const endB = b.end ? new Date(b.end).getTime() : 0;
+      return endB - endA;
+    });
   } else {
-    sortedValues = values.sort((a, b) => new Date(b.start) - new Date(a.start));
+    sortedValues = [...values].sort((a, b) => {
+      const startA = a.start ? new Date(a.start).getTime() : 0;
+      const startB = b.start ? new Date(b.start).getTime() : 0;
+      return startB - startA;
+    });
   }
   
   // TTM
@@ -551,14 +548,6 @@ function getMetricValueInternal(factsData, metric, year, quarterParam, scale) {
   if (tagData) {
     result = getValueFromTag(tagData, metric, year, quarterParam, isBalanceMetric);
   }
-
-  //=================НАЧАЛО ВСТАВКИ============
-  console.log('=== COMPUTE DEBUG ===');
-  console.log('metric:', metric);
-  console.log('result before compute:', result);
-  console.log('hasCompute:', !!(catalog.compute && catalog.compute.length > 0));
-  console.log('computeTags:', catalog.compute);
-  //=================КОНЕЦ ВСТАВКИ================
   
   // ========== 2. ЕСЛИ НЕ НАШЛИ И ЕСТЬ COMPUTE ==========
   if ((result === null || result === undefined) && catalog.compute && catalog.compute.length > 0) {
@@ -566,16 +555,9 @@ function getMetricValueInternal(factsData, metric, year, quarterParam, scale) {
     let validCount = 0;
     
     for (const computeTag of catalog.compute) {
-
-      //=================НАЧАЛО ВСТАВКИ============
-      console.log('Trying computeTag:', computeTag);
       const computeFound = findTagData(factsData, [computeTag]);
-      console.log('computeFound:', computeFound ? 'FOUND' : 'NOT FOUND');
-      //=================КОНЕЦ ВСТАВКИ================
-      
       if (computeFound) {
-        const computeTagData = computeFound.data;
-        const computeResult = getValueFromTag(computeTagData, metric, year, quarterParam, isBalanceMetric);
+        const computeResult = getValueFromTag(computeFound.data, metric, year, quarterParam, isBalanceMetric);
         
         if (computeResult !== null && computeResult !== undefined) {
           if (catalog.operation === 'sum') {
@@ -615,37 +597,80 @@ function getTTMValue(factsData, metricName, scale) {
   
   // Балансовые метрики: последнее значение
   if (ttmType === 'last') {
-    // Сначала пробуем прямой тег
     let values = getMetricValuesArray(factsData, metricName);
     
-    // Если нет данных и есть compute — используем первый compute-тег
+    // Если прямого тега нет — собираем values из всех compute-тегов
     if ((!values || values.length === 0) && catalog.compute && catalog.compute.length > 0) {
-      values = getMetricValuesArray(factsData, catalog.compute[0]);
+      const filingsMap = new Map();
+      for (const computeTag of catalog.compute) {
+        const tagValues = getMetricValuesArray(factsData, computeTag);
+        if (tagValues && tagValues.length > 0) {
+          for (const v of tagValues) {
+            const key = [
+              v.fy || '',
+              v.fp || '',
+              v.form || '',
+              v.end || '',
+              v.start || '',
+              v.filed || ''
+            ].join('|');
+            if (!filingsMap.has(key)) filingsMap.set(key, v);
+          }
+        }
+      }
+      values = filingsMap.size > 0 ? Array.from(filingsMap.values()) : null;
     }
     
-    if (!values) return null;
-    const sorted = values.sort((a, b) => new Date(b.end) - new Date(a.end));
-    return applyScale(sorted[0]?.val, scale);
+    if (!values || values.length === 0) return null;
+    
+    const sortedValues = [...values].sort((a, b) => {
+      const endA = a.end ? new Date(a.end).getTime() : 0;
+      const endB = b.end ? new Date(b.end).getTime() : 0;
+      return endB - endA;
+    });
+    return applyScale(sortedValues[0]?.val, scale);
   }
   
   // P&L и Cash Flow
-  // Сначала пробуем прямой тег
   let values = getMetricValuesArray(factsData, metricName);
   
-  // Если нет данных и есть compute — используем первый compute-тег
+  // Если прямого тега нет — собираем values из всех compute-тегов
   if ((!values || values.length === 0) && catalog.compute && catalog.compute.length > 0) {
-    values = getMetricValuesArray(factsData, catalog.compute[0]);
+    const filingsMap = new Map();
+    for (const computeTag of catalog.compute) {
+      const tagValues = getMetricValuesArray(factsData, computeTag);
+      if (tagValues && tagValues.length > 0) {
+        for (const v of tagValues) {
+          const key = [
+            v.fy || '',
+            v.fp || '',
+            v.form || '',
+            v.end || '',
+            v.start || '',
+            v.filed || ''
+          ].join('|');
+          if (!filingsMap.has(key)) filingsMap.set(key, v);
+        }
+      }
+    }
+    values = filingsMap.size > 0 ? Array.from(filingsMap.values()) : null;
   }
   
-  if (!values) return null;
+  if (!values || values.length === 0) return null;
   
-  // Находим последний отчёт (поддерживаем 10-K, 20-F, 40-F, 10-Q, 6-K)
+  // Находим последний отчёт (иммутабельная сортировка с safer comparator)
   const allReports = values.filter(v => 
     (v.form === '10-K' || v.form === '10-Q' || v.form === '20-F' || v.form === '40-F' || v.form === '6-K') && v.filed
   );
-  const lastReport = allReports.sort((a, b) => new Date(b.filed) - new Date(a.filed))[0];
   
-  if (!lastReport) return null;
+  if (allReports.length === 0) return null;
+  
+  const sortedReports = [...allReports].sort((a, b) => {
+    const dateA = a.filed ? new Date(a.filed).getTime() : 0;
+    const dateB = b.filed ? new Date(b.filed).getTime() : 0;
+    return dateB - dateA;
+  });
+  const lastReport = sortedReports[0];
   
   // Если последний отчёт — годовой (10-K, 20-F, 40-F)
   if (lastReport.form === '10-K' || lastReport.form === '20-F' || lastReport.form === '40-F') {
@@ -653,8 +678,15 @@ function getTTMValue(factsData, metricName, scale) {
     return applyScale(annualValue, scale);
   }
   
-  // Если последний отчёт — 10-Q или 6-K, собираем 4 квартала подряд
-  const lastQuarterNum = parseInt(lastReport.fp.substring(1));
+  // Для квартальных отчётов (10-Q, 6-K) проверяем, что fp имеет формат Q1-Q4
+  const quarterMatch = lastReport.fp?.match(/^Q([1-4])$/);
+  if (!quarterMatch) {
+    // Нестандартный формат квартала — не можем определить TTM
+    // TODO: future improvement - detect annual by period length
+    return null;
+  }
+  
+  const lastQuarterNum = parseInt(quarterMatch[1]);
   const lastYear = lastReport.fy;
   
   const quarters = [];
@@ -668,14 +700,12 @@ function getTTMValue(factsData, metricName, scale) {
     quarters.push({ year: year, quarterNum: quarterNum });
   }
   
-  // Получаем значения через getMetricValueInternal для каждого квартала
   let sum = 0;
   let validCount = 0;
   
   for (const q of quarters) {
     const quarterParam = `q${q.quarterNum}`;
     const value = getMetricValueInternal(factsData, metricName, q.year, quarterParam, null);
-    
     if (value !== null) {
       sum += value;
       validCount++;
