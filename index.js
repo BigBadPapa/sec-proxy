@@ -83,7 +83,7 @@ const METRICS_CATALOG = {
   icf: { tags: ['NetCashProvidedByUsedInInvestingActivities', 'CashFlowsFromUsedInInvestingActivities'], category: 'CashFlow', ttm: 'sum', ru: 'ICF' },
   fcf: { tags: ['NetCashProvidedByUsedInFinancingActivities', 'CashFlowsFromUsedInFinancingActivities'], category: 'CashFlow', ttm: 'sum', ru: 'FCF' },
 
-  netchangeincash: { tags: ['CashCashEquivalentsRestrictedCashAndRestrictedCashEquivalentsPeriodIncreaseDecreaseIncludingExchangeRateEffect'], compute: ['CashCashEquivalentsRestrictedCashAndRestrictedCashEquivalentsPeriodIncreaseDecreaseExcludingExchangeRateEffect', 'EffectOfExchangeRateOnCashCashEquivalentsRestrictedCashAndRestrictedCashEquivalents', 'IncreaseDecreaseInCashAndCashEquivalentsBeforeEffectOfExchangeRateChanges', 'EffectOfExchangeRateChangesOnCashAndCashEquivalents'], operation: 'sum', category: 'CashFlow', ttm: 'sum', ru: 'Чистое изменение денег' },
+  netchangeincash: { tags: ['IncreaseDecreaseInCashAndCashEquivalentsBeforeEffectOfExchangeRateChanges', 'CashCashEquivalentsRestrictedCashAndRestrictedCashEquivalentsPeriodIncreaseDecreaseIncludingExchangeRateEffect'], compute: ['CashCashEquivalentsRestrictedCashAndRestrictedCashEquivalentsPeriodIncreaseDecreaseExcludingExchangeRateEffect', 'EffectOfExchangeRateOnCashCashEquivalentsRestrictedCashAndRestrictedCashEquivalents', 'IncreaseDecreaseInCashAndCashEquivalentsBeforeEffectOfExchangeRateChanges', 'EffectOfExchangeRateChangesOnCashAndCashEquivalents'], operation: 'sum', category: 'CashFlow', ttm: 'sum', ru: 'Чистое изменение денег' },
   da: { tags: ['DepreciationDepletionAndAmortization', 'Depreciation', 'DepreciationAndAmortization', 'DepreciationAmortizationAndAccretionNet', 'DepreciationAndAmortizationExcludingDebtIssuanceCosts', 'AmortizationOfIntangibleAssets', 'DepreciationAmortizationDecommissioning'], category: 'CashFlow', ttm: 'sum', ru: 'Амортизация и износ' },
   
   netincomecf: { tags: ['NetIncomeLoss'], category: 'CashFlow', ttm: 'sum', ru: 'Чистая прибыль (для CF)' },
@@ -423,12 +423,6 @@ function getValueFromTag(tagData, metricName, year, quarterParam, isBalanceMetri
             }
           }
           result = annual10K?.val || null;
-          
-          // ========== ЛОГИРОВАНИЕ ==========
-          console.log('=== 4q (YTD) DEBUG ===');
-          console.log('year:', year);
-          console.log('annual10K:', annual10K ? { form: annual10K.form, fy: annual10K.fy, val: annual10K.val } : 'NOT FOUND');
-          // ========== КОНЕЦ ЛОГИРОВАНИЯ ==========
         } else {
           // q4 = 10-K − 3q (поддержка 20-F, 40-F)
           // Ищем годовой отчёт
@@ -446,13 +440,6 @@ function getValueFromTag(tagData, metricName, year, quarterParam, isBalanceMetri
             ytdQ3 = sortedValues.find(v => v.fy === year && v.fp === 'Q3' && v.form === form);
             if (ytdQ3) break;
           }
-          
-          // ========== ЛОГИРОВАНИЕ ==========
-          console.log('=== q4 (Quarter) DEBUG ===');
-          console.log('year:', year);
-          console.log('annual10K:', annual10K ? { form: annual10K.form, fy: annual10K.fy, val: annual10K.val } : 'NOT FOUND');
-          console.log('ytdQ3:', ytdQ3 ? { form: ytdQ3.form, fy: ytdQ3.fy, val: ytdQ3.val, fp: ytdQ3.fp } : 'NOT FOUND');
-          // ========== КОНЕЦ ЛОГИРОВАНИЯ ==========
           
           if (annual10K && ytdQ3) {
             result = annual10K.val - ytdQ3.val;
@@ -477,13 +464,6 @@ function getValueFromTag(tagData, metricName, year, quarterParam, isBalanceMetri
             );
             if (candidates.length > 0) break;
           }
-          
-          // ========== ЛОГИРОВАНИЕ ==========
-          console.log(`=== q${quarterInfo.num} (Quarter) DEBUG ===`);
-          console.log('year:', year);
-          console.log('candidates count:', candidates.length);
-          console.log('candidates:', candidates.map(v => ({ form: v.form, fy: v.fy, val: v.val, start: v.start, end: v.end })));
-          // ========== КОНЕЦ ЛОГИРОВАНИЯ ==========
           
           // Ищем запись за 3 месяца (80-100 дней)
           let quarterValue = candidates.find(v => {
@@ -529,13 +509,6 @@ function getValueFromTag(tagData, metricName, year, quarterParam, isBalanceMetri
             if (candidates.length > 0) break;
           }
           
-          // ========== ЛОГИРОВАНИЕ ==========
-          console.log(`=== ${quarterInfo.num}q (YTD) DEBUG ===`);
-          console.log('year:', year);
-          console.log('candidates count:', candidates.length);
-          console.log('candidates:', candidates.map(v => ({ form: v.form, fy: v.fy, val: v.val, start: v.start, end: v.end })));
-          // ========== КОНЕЦ ЛОГИРОВАНИЯ ==========
-          
           let minDays = 0, maxDays = 0;
           if (quarterInfo.num === 1) {
             minDays = 80; maxDays = 100;
@@ -578,17 +551,14 @@ function getMetricValueInternal(factsData, metric, year, quarterParam, scale) {
   if (tagData) {
     result = getValueFromTag(tagData, metric, year, quarterParam, isBalanceMetric);
   }
-  
-  // ========== ЛОГИРОВАНИЕ ДЛЯ COMPUTE ==========
+
+  //=================НАЧАЛО ВСТАВКИ============
   console.log('=== COMPUTE DEBUG ===');
   console.log('metric:', metric);
   console.log('result before compute:', result);
   console.log('hasCompute:', !!(catalog.compute && catalog.compute.length > 0));
   console.log('computeTags:', catalog.compute);
-  console.log('isBalanceMetric:', isBalanceMetric);
-  console.log('year:', year);
-  console.log('quarterParam:', quarterParam);
-  // ========== КОНЕЦ ЛОГИРОВАНИЯ ==========
+  //=================КОНЕЦ ВСТАВКИ================
   
   // ========== 2. ЕСЛИ НЕ НАШЛИ И ЕСТЬ COMPUTE ==========
   if ((result === null || result === undefined) && catalog.compute && catalog.compute.length > 0) {
@@ -596,21 +566,16 @@ function getMetricValueInternal(factsData, metric, year, quarterParam, scale) {
     let validCount = 0;
     
     for (const computeTag of catalog.compute) {
-      // ========== ЛОГИРОВАНИЕ ДЛЯ КАЖДОГО COMPUTE ТЕГА ==========
+
+      //=================НАЧАЛО ВСТАВКИ============
       console.log('Trying computeTag:', computeTag);
       const computeFound = findTagData(factsData, [computeTag]);
       console.log('computeFound:', computeFound ? 'FOUND' : 'NOT FOUND');
-      if (computeFound) {
-        console.log('computeFound.taxonomy:', computeFound.taxonomy);
-        console.log('computeFound.tag:', computeFound.tag);
-      }
-      // ========== КОНЕЦ ЛОГИРОВАНИЯ ==========
+      //=================КОНЕЦ ВСТАВКИ================
       
       if (computeFound) {
         const computeTagData = computeFound.data;
         const computeResult = getValueFromTag(computeTagData, metric, year, quarterParam, isBalanceMetric);
-        
-        console.log('computeResult:', computeResult);
         
         if (computeResult !== null && computeResult !== undefined) {
           if (catalog.operation === 'sum') {
@@ -625,17 +590,14 @@ function getMetricValueInternal(factsData, metric, year, quarterParam, scale) {
       }
     }
     
-    console.log('Final sum:', sum, 'validCount:', validCount);
-    
     if (validCount > 0 && sum !== null) {
       result = sum;
     }
   }
   
-  console.log('Final result:', result);
-  
   return result !== null ? applyScale(result, scale) : null;
 }
+
 // ============ ОСНОВНАЯ ФУНКЦИЯ ПОИСКА (ОБЁРТКА) ============
 function getMetricValue(factsData, metric, year, quarterParam, scale) {
   // TTM: нет года и нет квартала
