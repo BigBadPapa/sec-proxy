@@ -495,12 +495,30 @@ function getValueFromTag(tagData, metricName, year, quarterParam, isBalanceMetri
         const targetFp = `Q${quarterInfo.num}`;
         
         if (quarterInfo.type === 'quarter') {
-          // q1, q2, q3: ищем 10-Q или 6-K
-          let quarterValue = findQuarterlyReport(sortedValues, year, targetFp);
+          // q1, q2, q3: только за квартал (3 месяца)
+          const formsToTry = ['10-Q', '6-K'];
+          let candidates = [];
+          for (const form of formsToTry) {
+            candidates = sortedValues.filter(v => 
+              v.form === form && 
+              v.fy === year && 
+              v.fp === targetFp
+            );
+            if (candidates.length > 0) break;
+          }
+          
+          // Ищем запись за 3 месяца (80-100 дней)
+          let quarterValue = candidates.find(v => {
+            const days = (new Date(v.end) - new Date(v.start)) / (1000 * 60 * 60 * 24);
+            return days >= QUARTER_DAYS[1].min && days <= QUARTER_DAYS[1].max;
+          });
           
           // Если нет 3-месячной записи, вычисляем через YTD (для q2 и q3)
           if (!quarterValue && (quarterInfo.num === 2 || quarterInfo.num === 3)) {
-            const ytdCurrent = findQuarterlyReport(sortedValues, year, targetFp);
+            const ytdCurrent = candidates.find(v => {
+              const days = (new Date(v.end) - new Date(v.start)) / (1000 * 60 * 60 * 24);
+              return days >= QUARTER_DAYS[quarterInfo.num].min && days <= QUARTER_DAYS[quarterInfo.num].max;
+            });
             const prevFp = `Q${quarterInfo.num - 1}`;
             const ytdPrev = findQuarterlyReport(sortedValues, year, prevFp);
             
@@ -514,8 +532,31 @@ function getValueFromTag(tagData, metricName, year, quarterParam, isBalanceMetri
           result = quarterValue?.val || null;
         }
         else if (quarterInfo.type === 'ytd') {
-          // 1q, 2q, 3q: YTD
-          const ytdValue = findQuarterlyReport(sortedValues, year, targetFp);
+          // 1q, 2q, 3q: YTD (нарастающим итогом)
+          let ytdValue = null;
+          
+          if (quarterInfo.num === 1) {
+            // 1q: 3 месяца (как q1)
+            ytdValue = findQuarterlyReport(sortedValues, year, targetFp);
+          } else {
+            // 2q: 6 месяцев, 3q: 9 месяцев
+            const formsToTry = ['10-Q', '6-K'];
+            let candidates = [];
+            for (const form of formsToTry) {
+              candidates = sortedValues.filter(v => 
+                v.form === form && 
+                v.fy === year && 
+                v.fp === targetFp
+              );
+              if (candidates.length > 0) break;
+            }
+            
+            ytdValue = candidates.find(v => {
+              const days = (new Date(v.end) - new Date(v.start)) / (1000 * 60 * 60 * 24);
+              return days >= QUARTER_DAYS[quarterInfo.num].min && days <= QUARTER_DAYS[quarterInfo.num].max;
+            });
+          }
+          
           result = ytdValue?.val || null;
         }
       }
