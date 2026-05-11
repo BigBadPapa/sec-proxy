@@ -4,12 +4,11 @@ const fetch = require('node-fetch');
 const app = express();
 
 // ============ КОНСТАНТЫ ============
-// Константы для длительности кварталов (в днях)
 const QUARTER_DAYS = {
-  1: { min: 80, max: 100 },   // Q1: 3 месяца
-  2: { min: 170, max: 190 },  // Q2: 6 месяцев (YTD)
-  3: { min: 260, max: 280 },  // Q3: 9 месяцев (YTD)
-  4: { min: 350, max: 370 }   // Q4: 12 месяцев
+  1: { min: 80, max: 100 },
+  2: { min: 170, max: 190 },
+  3: { min: 260, max: 280 },
+  4: { min: 350, max: 370 }
 };
 
 // ============ КОНФИГУРАЦИЯ ============
@@ -20,12 +19,15 @@ const DATA_BASE = 'https://data.sec.gov';
 // Кэши
 let tickersCache = null;
 let tickersCacheTime = 0;
-const TICKERS_CACHE_TTL = 2; // 1 час
+const TICKERS_CACHE_TTL = 60 * 60 * 1000;
+
+// Кэш метрик
+const metricsCache = new Map();
+const METRICS_CACHE_TTL = 60 * 60 * 1000; // 1 час
 
 // ============ ПОЛНЫЙ СПРАВОЧНИК МЕТРИК ============
 const METRICS_CATALOG = {
-  // P&L
-  revenue: { tags: ['RevenueFromContractWithCustomerExcludingAssessedTax', 'RevenueFromContractWithCustomerIncludingAssessedTax'], compute: ['InterestIncomeExpenseNet', 'NoninterestIncome'], operation: 'sum', category: 'P&L', ttm: 'sum', ru: 'Выручка' },
+  revenue: { tags: ['RevenueFromContractWithCustomerExcludingAssessedTax', 'RevenueFromContractWithCustomerIncludingAssessedTax', 'Revenues', 'SalesRevenueNet', 'TotalRevenues'], category: 'P&L', ttm: 'sum', ru: 'Выручка' },
   cogs: { tags: ['CostOfGoodsAndServicesSold', 'CostOfRevenue', 'CostOfSales', 'CostsAndExpenses', 'CostOfServices'], category: 'P&L', ttm: 'sum', ru: 'Себестоимость' },
   grossprofit: { tags: ['GrossProfit'], category: 'P&L', ttm: 'sum', ru: 'Валовая прибыль' },
   rd: { tags: ['ResearchAndDevelopmentExpense', 'ResearchAndDevelopmentExpenseExcludingAcquiredInProcessResearchAndDevelopment'], category: 'P&L', ttm: 'sum', ru: 'R&D расходы' },
@@ -39,7 +41,6 @@ const METRICS_CATALOG = {
   taxexpense: { tags: ['IncomeTaxExpenseBenefit'], category: 'P&L', ttm: 'sum', ru: 'Налог на прибыль' },
   netincome: { tags: ['NetIncomeLoss', 'ProfitLoss', 'NetIncomeLossAvailableToCommonStockholdersBasic', 'ComprehensiveIncomeNetOfTax'], category: 'P&L', ttm: 'sum', ru: 'Чистая прибыль' },
 
-  // Balance Sheet - Assets
   totalassets: { tags: ['Assets'], category: 'Balance', ttm: 'last', ru: 'ВСЕГО АКТИВЫ' },
   currentassets: { tags: ['AssetsCurrent'], category: 'Balance', ttm: 'last', ru: 'Оборотные активы' },
   cashandequivalents: { tags: ['CashAndCashEquivalentsAtCarryingValue', 'CashAndCashEquivalentsAtFairValue', 'CashCashEquivalentsAndShortTermInvestments', 'CashAndDueFromBanks'], category: 'Balance', ttm: 'last', ru: 'Деньги и эквиваленты' },
@@ -48,17 +49,15 @@ const METRICS_CATALOG = {
   inventory: { tags: ['InventoryNet', 'InventoryFinishedGoods', 'InventoryRawMaterialsAndSupplies', 'InventoryWorkInProcessAndFinishedGoods'], category: 'Balance', ttm: 'last', ru: 'Запасы' },
   prepaidexpenses: { tags: ['PrepaidExpenseCurrent', 'OtherAssetsCurrent'], category: 'Balance', ttm: 'last', ru: 'Предоплаченные расходы' },
   othercurrentassets: { tags: ['OtherAssetsCurrent'], category: 'Balance', ttm: 'last', ru: 'Прочие оборотные активы' },
-    
   noncurrentassets: { tags: ['AssetsNoncurrent'], category: 'Balance', ttm: 'last', ru: 'Внеоборотные активы' },
   ppe: { tags: ['PropertyPlantAndEquipmentNet', 'PropertyPlantAndEquipmentAndOperatingLeaseRightOfUseAssetAfterAccumulatedDepreciationAndAmortization', 'PropertyPlantAndEquipmentAndFinanceLeaseRightOfUseAssetAfterAccumulatedDepreciationAndAmortization'], category: 'Balance', ttm: 'last', ru: 'Основные средства' },
   intangibleassets: { tags: ['IntangibleAssetsNetExcludingGoodwill', 'IntangibleAssetsNetIncludingGoodwill'], category: 'Balance', ttm: 'last', ru: 'Нематериальные активы' },
-  goodwill: { tags: ['Goodwill'], category: 'Balance', ttm: 'last', ru: 'Гудвилл' }, 
+  goodwill: { tags: ['Goodwill'], category: 'Balance', ttm: 'last', ru: 'Гудвилл' },
   longterminvestments: { tags: ['LongTermInvestments', 'MarketableSecuritiesNoncurrent'], category: 'Balance', ttm: 'last', ru: 'Долгосрочные инвестиции' },
   accumulateddepreciation: { tags: ['AccumulatedDepreciationDepletionAndAmortizationPropertyPlantAndEquipment'], category: 'Balance', ttm: 'last', ru: 'Накопленная амортизация' },
   deferredtaxassets: { tags: ['DeferredTaxAssetsNet'], category: 'Balance', ttm: 'last', ru: 'Отложенные налоговые активы' },
   othernoncurrentassets: { tags: ['OtherAssetsNoncurrent'], category: 'Balance', ttm: 'last', ru: 'Прочие внеоборотные активы' },
 
-  // Balance Sheet - Liabilities
   totalliabilities: { tags: ['Liabilities'], category: 'Balance', ttm: 'last', ru: 'ВСЕГО ОБЯЗАТЕЛЬСТВА' },
   totalcurrentliabilities: { tags: ['LiabilitiesCurrent'], category: 'Balance', ttm: 'last', ru: 'Итого краткосрочные обязательства' },
   accountspayable: { tags: ['AccountsPayableCurrent'], category: 'Balance', ttm: 'last', ru: 'Кредиторская задолженность' },
@@ -67,15 +66,13 @@ const METRICS_CATALOG = {
   shorttermdebt: { tags: ['ShortTermBorrowings', 'LongTermDebtCurrent', 'CurrentPortionOfLongTermDebt', 'ShortTermBankBorrowings'], category: 'Balance', ttm: 'last', ru: 'Краткосрочный долг' },
   deferredrevenue: { tags: ['DeferredRevenueCurrent', 'ContractWithCustomerLiabilityCurrent'], category: 'Balance', ttm: 'last', ru: 'Деферредный доход' },
   othercurrentliabilities: { tags: ['OtherLiabilitiesCurrent'], category: 'Balance', ttm: 'last', ru: 'Прочие краткосрочные обязательства' },
-  
   totalnoncurrentliabilities: { tags: ['LiabilitiesNoncurrent'], category: 'Balance', ttm: 'last', ru: 'Итого долгосрочные обязательства' },
   longtermdebt: { tags: ['LongTermDebt', 'LongTermDebtNoncurrent', 'LongTermDebtAndCapitalLeaseObligations'], category: 'Balance', ttm: 'last', ru: 'Долгосрочный долг' },
   deferredtaxliabilities: { tags: ['DeferredTaxLiabilitiesNet'], category: 'Balance', ttm: 'last', ru: 'Отложенные налоговые обязательства' },
   deferredrevenuenoncurrent: { tags: ['DeferredRevenueNoncurrent', 'ContractWithCustomerLiabilityNoncurrent'], category: 'Balance', ttm: 'last', ru: 'Деферредный доход долгосрочный' },
   pensionliabilities: { tags: ['PensionAndOtherPostretirementDefinedBenefitPlansLiabilitiesNoncurrent'], category: 'Balance', ttm: 'last', ru: 'Пенсионные обязательства' },
   othernoncurrentliabilities: { tags: ['OtherLiabilitiesNoncurrent'], category: 'Balance', ttm: 'last', ru: 'Прочие долгосрочные обязательства' },
-  
-  // Equity
+
   preferredstock: { tags: ['PreferredStockValue', 'PreferredStockSharesOutstanding'], category: 'Equity', ttm: 'last', ru: 'Привилегированные акции' },
   commonstock: { tags: ['CommonStockValue', 'CommonStocksIncludingAdditionalPaidInCapital'], category: 'Equity', ttm: 'last', ru: 'Обыкновенные акции' },
   additionalpaidincapital: { tags: ['AdditionalPaidInCapital'], category: 'Equity', ttm: 'last', ru: 'Дополнительный капитал' },
@@ -84,16 +81,25 @@ const METRICS_CATALOG = {
   treasurystock: { tags: ['TreasuryStockValue', 'TreasuryStockCommon'], category: 'Equity', ttm: 'last', ru: 'Казначейские акции' },
   totalequity: { tags: ['StockholdersEquity', 'PartnersCapital', 'MembersEquity', 'Equity'], category: 'Equity', ttm: 'last', ru: 'ВСЕГО КАПИТАЛ' },
 
-  // Cash Flow
   ocf: { tags: ['NetCashProvidedByUsedInOperatingActivities', 'NetCashProvidedByUsedInOperatingActivitiesContinuingOperations', 'CashFlowsFromUsedInOperatingActivities'], category: 'CashFlow', ttm: 'sum', ru: 'OCF' },
   icf: { tags: ['NetCashProvidedByUsedInInvestingActivities', 'CashFlowsFromUsedInInvestingActivities'], category: 'CashFlow', ttm: 'sum', ru: 'ICF' },
   fcf: { tags: ['NetCashProvidedByUsedInFinancingActivities', 'CashFlowsFromUsedInFinancingActivities'], category: 'CashFlow', ttm: 'sum', ru: 'FCF' },
 
-  netchangeincash: { tags: ['CashCashEquivalentsRestrictedCashAndRestrictedCashEquivalentsPeriodIncreaseDecreaseIncludingExchangeRateEffect'], compute: ['CashCashEquivalentsRestrictedCashAndRestrictedCashEquivalentsPeriodIncreaseDecreaseExcludingExchangeRateEffect', 'EffectOfExchangeRateOnCashCashEquivalentsRestrictedCashAndRestrictedCashEquivalents', 'IncreaseDecreaseInCashAndCashEquivalentsBeforeEffectOfExchangeRateChanges', 'EffectOfExchangeRateChangesOnCashAndCashEquivalents'], operation: 'sum', category: 'CashFlow', ttm: 'sum', ru: 'Чистое изменение денег' },
+  netchangeincash: { 
+    tags: ['CashCashEquivalentsRestrictedCashAndRestrictedCashEquivalentsPeriodIncreaseDecreaseIncludingExchangeRateEffect'], 
+    compute: [
+      'CashCashEquivalentsRestrictedCashAndRestrictedCashEquivalentsPeriodIncreaseDecreaseExcludingExchangeRateEffect',
+      'EffectOfExchangeRateOnCashCashEquivalentsRestrictedCashAndRestrictedCashEquivalents',
+      'IncreaseDecreaseInCashAndCashEquivalentsBeforeEffectOfExchangeRateChanges',
+      'EffectOfExchangeRateChangesOnCashAndCashEquivalents'
+    ], 
+    operation: 'sum', 
+    category: 'CashFlow', 
+    ttm: 'sum', 
+    ru: 'Чистое изменение денег' 
+  },
   da: { tags: ['DepreciationDepletionAndAmortization', 'Depreciation', 'DepreciationAndAmortization', 'DepreciationAmortizationAndAccretionNet', 'DepreciationAndAmortizationExcludingDebtIssuanceCosts', 'AmortizationOfIntangibleAssets', 'DepreciationAmortizationDecommissioning'], category: 'CashFlow', ttm: 'sum', ru: 'Амортизация и износ' },
-  
   netincomecf: { tags: ['NetIncomeLoss'], category: 'CashFlow', ttm: 'sum', ru: 'Чистая прибыль (для CF)' },
- 
   stockbasedcompensation: { tags: ['ShareBasedCompensation'], category: 'CashFlow', ttm: 'sum', ru: 'Вознаграждение акциями' },
   deferredtax: { tags: ['DeferredIncomeTaxExpenseBenefit'], category: 'CashFlow', ttm: 'sum', ru: 'Отложенные налоги' },
   workingcapitalchanges: { tags: ['IncreaseDecreaseInOperatingCapital'], category: 'CashFlow', ttm: 'sum', ru: 'Изменение оборотного капитала' },
@@ -106,19 +112,18 @@ const METRICS_CATALOG = {
   purchaseofinvestments: { tags: ['PaymentsToAcquireInvestments'], category: 'CashFlow', ttm: 'sum', ru: 'Покупка инвестиций' },
   saleofinvestments: { tags: ['ProceedsFromSaleAndMaturityOfInvestments'], category: 'CashFlow', ttm: 'sum', ru: 'Продажа инвестиций' },
   otherinvestingactivities: { tags: ['OtherInvestingActivities'], category: 'CashFlow', ttm: 'sum', ru: 'Прочие инвестиционные' },
-  
+
   debtissuance: { tags: ['ProceedsFromIssuanceOfLongTermDebt', 'ProceedsFromBorrowings'], category: 'CashFlow', ttm: 'sum', ru: 'Выпуск долга' },
   debtrepayment: { tags: ['RepaymentsOfLongTermDebt', 'RepaymentsOfDebt'], category: 'CashFlow', ttm: 'sum', ru: 'Погашение долга' },
   stockissuance: { tags: ['ProceedsFromIssuanceOfCommonStock'], category: 'CashFlow', ttm: 'sum', ru: 'Выпуск акций' },
   buybacks: { tags: ['PaymentsForRepurchaseOfCommonStock', 'PaymentsForRepurchaseOfEquity'], category: 'CashFlow', ttm: 'sum', ru: 'Выкуп акций' },
   dividendspaid: { tags: ['PaymentsOfDividends', 'PaymentsOfDividendsToNoncontrollingInterests'], category: 'CashFlow', ttm: 'sum', ru: 'Дивиденды' },
   otherfinancingactivities: { tags: ['OtherFinancingActivities'], category: 'CashFlow', ttm: 'sum', ru: 'Прочие финансовые' },
-  
+
   effectofexchangerate: { tags: ['EffectOfExchangeRateOnCashAndCashEquivalents'], category: 'CashFlow', ttm: 'sum', ru: 'Влияние курсов валют' },
   beginningcash: { tags: ['CashAndCashEquivalentsAtBeginningOfPeriod'], category: 'CashFlow', ttm: 'last', ru: 'Деньги на начало' },
   endingcash: { tags: ['CashAndCashEquivalentsAtEndOfPeriod'], category: 'CashFlow', ttm: 'last', ru: 'Деньги на конец' },
 
-  // Per Share
   sharesbasic: { tags: ['WeightedAverageNumberOfSharesOutstandingBasic'], category: 'PerShare', ttm: 'last', ru: 'Акции basic' },
   sharesdiluted: { tags: ['WeightedAverageNumberOfDilutedSharesOutstanding'], category: 'PerShare', ttm: 'last', ru: 'Акции diluted' },
   sharesoutstanding: { tags: ['CommonStockSharesOutstanding', 'EntityCommonStockSharesOutstanding'], category: 'PerShare', ttm: 'last', ru: 'Акции в обращении' },
@@ -128,7 +133,6 @@ const METRICS_CATALOG = {
   dividendspershare: { tags: ['CommonStockDividendsPerShareDeclared', 'DividendsPerShare'], category: 'PerShare', ttm: 'sum', ru: 'DPS' }
 };
 
-// Русские алиасы
 const RU_ALIASES = {
   выручка: 'revenue',
   себестоимость: 'cogs',
@@ -151,15 +155,12 @@ const RU_ALIASES = {
 
 function resolveMetric(alias) {
   const normalized = alias.toString().trim().toLowerCase().replace(/[\s_-]/g, '');
-  
   if (METRICS_CATALOG[normalized]) return normalized;
   if (RU_ALIASES[normalized]) return RU_ALIASES[normalized];
-  
   for (const [key, val] of Object.entries(METRICS_CATALOG)) {
     const ruClean = val.ru.toLowerCase().replace(/[\s_]/g, '');
     if (ruClean === normalized) return key;
   }
-  
   return null;
 }
 
@@ -201,26 +202,19 @@ function buildFilingUrl(cik, accessionNumber, primaryDocument) {
   return `https://www.sec.gov/Archives/edgar/data/${cleanCik}/${cleanAcc}/`;
 }
 
-// ============ НОВЫЕ ФУНКЦИИ ============
-
 function parseQuarterString(quarterStr) {
   if (!quarterStr || typeof quarterStr !== 'string') return null;
   const lower = quarterStr.toLowerCase().trim();
-  
   if (lower === 'q1') return { type: 'quarter', num: 1 };
   if (lower === 'q2') return { type: 'quarter', num: 2 };
   if (lower === 'q3') return { type: 'quarter', num: 3 };
   if (lower === 'q4') return { type: 'quarter', num: 4 };
-  
   if (lower === '1q') return { type: 'ytd', num: 1 };
   if (lower === '2q') return { type: 'ytd', num: 2 };
   if (lower === '3q') return { type: 'ytd', num: 3 };
   if (lower === '4q') return { type: 'ytd', num: 4 };
-  
   return null;
 }
-
-// ============ ФУНКЦИИ-ХЕЛПЕРЫ ============
 
 function safeDateValue(dateStr) {
   if (!dateStr) return 0;
@@ -266,52 +260,99 @@ function findQuarterlyReport(values, year, fp, forms = ['10-Q', '6-K']) {
   return null;
 }
 
-function collectMetricValues(factsData, metricName) {
-  const catalog = METRICS_CATALOG[metricName];
-  if (!catalog) return null;
+// ============ НОВАЯ ЛОГИКА ПОИСКА ТЕГОВ ============
+
+function getAllTagData(factsData, tags) {
+  const taxonomies = ['us-gaap', 'ifrs-full', 'srt'];
+  const facts = factsData?.facts;
+  if (!facts) return [];
   
-  let values = getMetricValuesArray(factsData, metricName);
+  const results = [];
   
-  if ((!values || values.length === 0) && catalog.compute && catalog.compute.length > 0) {
-    const filingsMap = new Map();
-    for (const computeTag of catalog.compute) {
-      const tagValues = getMetricValuesArray(factsData, computeTag);
-      if (tagValues && tagValues.length > 0) {
-        for (const v of tagValues) {
-          const key = [
-            v.fy || '',
-            v.fp || '',
-            v.form || '',
-            v.end || '',
-            v.start || '',
-            v.filed || ''
-          ].join('|');
-          if (!filingsMap.has(key)) filingsMap.set(key, v);
-        }
-      }
+  for (const taxonomy of taxonomies) {
+    const taxData = facts[taxonomy];
+    if (!taxData) continue;
+    
+    for (const tag of tags) {
+      const tagData = taxData[tag];
+      if (!tagData) continue;
+      
+      const units = tagData.units;
+      const unitKey = Object.keys(units).find(k => k.includes('USD')) || 
+                      Object.keys(units).find(k => k.includes('shares')) ||
+                      Object.keys(units).find(k => k.includes('pure')) ||
+                      Object.keys(units)[0];
+      const values = units[unitKey];
+      if (!values || values.length === 0) continue;
+      
+      results.push({
+        tag,
+        taxonomy,
+        data: tagData,
+        values,
+        latestFiling: values.reduce((latest, v) => {
+          const date = new Date(v.filed || v.end);
+          return (!latest || date > new Date(latest.filed || latest.end)) ? v : latest;
+        }, null)
+      });
     }
-    values = filingsMap.size > 0 ? Array.from(filingsMap.values()) : null;
   }
   
-  return values;
+  return results;
+}
+
+function getBestTagForYear(factsData, tags, year) {
+  const allTags = getAllTagData(factsData, tags);
+  if (allTags.length === 0) return null;
+  
+  let bestMatch = null;
+  let bestScore = -1;
+  
+  for (const tagInfo of allTags) {
+    // Ищем запись с нужным годом (по fy или по end)
+    const match = tagInfo.values.find(v => {
+      if (v.fy === year) return true;
+      const endYear = v.end ? new Date(v.end).getFullYear() : null;
+      return endYear === year;
+    });
+    
+    if (match) {
+      const score = (match.fy === year) ? 2 : 1;
+      if (score > bestScore) {
+        bestScore = score;
+        bestMatch = { ...tagInfo, match };
+      }
+    }
+  }
+  
+  return bestMatch;
+}
+
+function getBestTagForTTM(factsData, tags) {
+  const allTags = getAllTagData(factsData, tags);
+  if (allTags.length === 0) return null;
+  
+  let bestTag = null;
+  let latestDate = null;
+  
+  for (const tagInfo of allTags) {
+    if (tagInfo.latestFiling) {
+      const date = new Date(tagInfo.latestFiling.filed || tagInfo.latestFiling.end);
+      if (!latestDate || date > latestDate) {
+        latestDate = date;
+        bestTag = tagInfo;
+      }
+    }
+  }
+  
+  return bestTag;
 }
 
 // ============ ЕДИНЫЙ ПОИСК ПО ТАКСОНОМИЯМ ============
 
 function findTagData(factsData, tags) {
-  const taxonomies = ['us-gaap', 'ifrs-full', 'srt'];
-  const facts = factsData?.facts;
-  if (!facts) return null;
-
-  for (const taxonomy of taxonomies) {
-    const taxData = facts[taxonomy];
-    if (!taxData) continue;
-    for (const tag of tags) {
-      if (taxData[tag]) {
-        return { taxonomy, tag, data: taxData[tag] };
-      }
-    }
-  }
+  const result = getBestTagForYear(factsData, tags, new Date().getFullYear());
+  if (result) return { taxonomy: result.taxonomy, tag: result.tag, data: result.data };
   return null;
 }
 
@@ -377,26 +418,19 @@ function getMetricValuesArray(factsData, tagOrAlias) {
   if (!facts) return null;
   
   if (catalog) {
-    const found = findTagData(factsData, catalog.tags);
-    if (!found) return null;
-    
-    const units = found.data.units;
-    const unitKey = Object.keys(units).find(k => k.includes('USD')) || 
-                    Object.keys(units).find(k => k.includes('shares')) ||
-                    Object.keys(units).find(k => k.includes('pure')) ||
-                    Object.keys(units)[0];
-    return units[unitKey] || null;
+    const allTags = getAllTagData(factsData, catalog.tags);
+    if (allTags.length === 0) return null;
+    const bestTag = allTags.sort((a, b) => {
+      const dateA = new Date(a.latestFiling?.filed || a.latestFiling?.end);
+      const dateB = new Date(b.latestFiling?.filed || b.latestFiling?.end);
+      return dateB - dateA;
+    })[0];
+    return bestTag.values;
   }
   
-  const found = findTagData(factsData, [tagOrAlias]);
-  if (!found) return null;
-  
-  const units = found.data.units;
-  const unitKey = Object.keys(units).find(k => k.includes('USD')) || 
-                  Object.keys(units).find(k => k.includes('shares')) ||
-                  Object.keys(units).find(k => k.includes('pure')) ||
-                  Object.keys(units)[0];
-  return units[unitKey] || null;
+  const allTags = getAllTagData(factsData, [tagOrAlias]);
+  if (allTags.length === 0) return null;
+  return allTags[0].values;
 }
 
 // ============ ОСНОВНАЯ ЛОГИКА ПОИСКА ЗНАЧЕНИЯ ============
@@ -414,7 +448,6 @@ function getValueFromTag(tagData, metricName, year, quarterParam, isBalanceMetri
   
   let result = null;
   
-  // Сортировка
   let sortedValues;
   if (isBalanceMetric) {
     sortedValues = sortByEndDesc(values);
@@ -422,12 +455,10 @@ function getValueFromTag(tagData, metricName, year, quarterParam, isBalanceMetri
     sortedValues = sortByStartDesc(values);
   }
   
-  // Годовой отчёт
   if (year !== undefined && (quarterParam === undefined || quarterParam === 0 || quarterParam === 'annual' || quarterParam === 'год')) {
     const annual = findAnnualReport(sortedValues, year);
     result = annual?.val || null;
   }
-  // Квартальные данные
   else if (year !== undefined && quarterParam) {
     const quarterInfo = parseQuarterString(quarterParam);
     if (!quarterInfo) return null;
@@ -443,7 +474,6 @@ function getValueFromTag(tagData, metricName, year, quarterParam, isBalanceMetri
       }
     }
     else {
-      // Q4
       if (quarterInfo.num === 4) {
         if (quarterInfo.type === 'ytd') {
           const annual = findAnnualReport(sortedValues, year);
@@ -471,12 +501,10 @@ function getValueFromTag(tagData, metricName, year, quarterParam, isBalanceMetri
           }
         }
       }
-      // Q1, Q2, Q3
       else {
         const targetFp = `Q${quarterInfo.num}`;
         
         if (quarterInfo.type === 'quarter') {
-          // q1, q2, q3: только за квартал (3 месяца)
           const formsToTry = ['10-Q', '6-K'];
           let candidates = [];
           for (const form of formsToTry) {
@@ -488,13 +516,11 @@ function getValueFromTag(tagData, metricName, year, quarterParam, isBalanceMetri
             if (candidates.length > 0) break;
           }
           
-          // Ищем запись за 3 месяца (80-100 дней)
           let quarterValue = candidates.find(v => {
             const days = (new Date(v.end) - new Date(v.start)) / (1000 * 60 * 60 * 24);
             return days >= QUARTER_DAYS[1].min && days <= QUARTER_DAYS[1].max;
           });
           
-          // Для q2, q3: если нет 3-месячной записи, вычисляем через YTD
           if (!quarterValue && (quarterInfo.num === 2 || quarterInfo.num === 3)) {
             const ytdCurrent = candidates.find(v => {
               const days = (new Date(v.end) - new Date(v.start)) / (1000 * 60 * 60 * 24);
@@ -513,11 +539,9 @@ function getValueFromTag(tagData, metricName, year, quarterParam, isBalanceMetri
           result = quarterValue?.val || null;
         }
         else if (quarterInfo.type === 'ytd') {
-          // 1q, 2q, 3q: YTD
           let ytdValue = null;
           
           if (quarterInfo.num === 1) {
-            // 1q: 3 месяца
             const formsToTry = ['10-Q', '6-K'];
             let candidates = [];
             for (const form of formsToTry) {
@@ -533,7 +557,6 @@ function getValueFromTag(tagData, metricName, year, quarterParam, isBalanceMetri
               return days >= QUARTER_DAYS[1].min && days <= QUARTER_DAYS[1].max;
             });
           } else {
-            // 2q: 6 месяцев, 3q: 9 месяцев
             const formsToTry = ['10-Q', '6-K'];
             let candidates = [];
             for (const form of formsToTry) {
@@ -568,9 +591,15 @@ function getMetricValueInternal(factsData, metric, year, quarterParam, scale) {
   const isBalanceMetric = catalog.ttm === 'last';
   let result = null;
   
-  const found = findTagData(factsData, catalog.tags);
-  if (found) {
-    result = getValueFromTag(found.data, metric, year, quarterParam, isBalanceMetric);
+  let bestTag = null;
+  if (year !== undefined) {
+    bestTag = getBestTagForYear(factsData, catalog.tags, year);
+  } else {
+    bestTag = getBestTagForTTM(factsData, catalog.tags);
+  }
+  
+  if (bestTag) {
+    result = getValueFromTag(bestTag.data, metric, year, quarterParam, isBalanceMetric);
   }
   
   if ((result === null || result === undefined) && catalog.compute && catalog.compute.length > 0) {
@@ -578,19 +607,25 @@ function getMetricValueInternal(factsData, metric, year, quarterParam, scale) {
     let validCount = 0;
     
     for (const computeTag of catalog.compute) {
-      const computeFound = findTagData(factsData, [computeTag]);
-      if (!computeFound) continue;
+      let computeBestTag = null;
+      if (year !== undefined) {
+        computeBestTag = getBestTagForYear(factsData, [computeTag], year);
+      } else {
+        computeBestTag = getBestTagForTTM(factsData, [computeTag]);
+      }
       
-      const computeResult = getValueFromTag(computeFound.data, metric, year, quarterParam, isBalanceMetric);
-      if (computeResult !== null && computeResult !== undefined) {
-        if (catalog.operation === 'sum') {
-          if (sum === null) sum = 0;
-          sum += computeResult;
-        } else if (catalog.operation === 'subtract') {
-          if (sum === null) sum = computeResult;
-          else sum -= computeResult;
+      if (computeBestTag) {
+        const computeResult = getValueFromTag(computeBestTag.data, metric, year, quarterParam, isBalanceMetric);
+        if (computeResult !== null && computeResult !== undefined) {
+          if (catalog.operation === 'sum') {
+            if (sum === null) sum = 0;
+            sum += computeResult;
+          } else if (catalog.operation === 'subtract') {
+            if (sum === null) sum = computeResult;
+            else sum -= computeResult;
+          }
+          validCount++;
         }
-        validCount++;
       }
     }
     
@@ -604,10 +639,24 @@ function getMetricValueInternal(factsData, metric, year, quarterParam, scale) {
 
 // ============ ОСНОВНАЯ ФУНКЦИЯ ПОИСКА (ОБЁРТКА) ============
 function getMetricValue(factsData, metric, year, quarterParam, scale) {
-  if (year === undefined && quarterParam === undefined) {
-    return getTTMValue(factsData, metric, scale);
+  const cacheKey = `${metric}:${year}:${quarterParam}`;
+  if (metricsCache.has(cacheKey)) {
+    const cached = metricsCache.get(cacheKey);
+    if (Date.now() - cached.time < METRICS_CACHE_TTL) {
+      const value = cached.value !== null ? applyScale(cached.value, scale) : null;
+      return value;
+    }
   }
-  return getMetricValueInternal(factsData, metric, year, quarterParam, scale);
+  
+  let result;
+  if (year === undefined && quarterParam === undefined) {
+    result = getTTMValue(factsData, metric, scale);
+  } else {
+    result = getMetricValueInternal(factsData, metric, year, quarterParam, scale);
+  }
+  
+  metricsCache.set(cacheKey, { value: result !== null ? result : null, time: Date.now() });
+  return result;
 }
 
 // ============ TTM ФУНКЦИЯ ============
@@ -615,56 +664,26 @@ function getTTMValue(factsData, metricName, scale) {
   const catalog = METRICS_CATALOG[metricName];
   const ttmType = catalog?.ttm || 'sum';
   
-  const values = collectMetricValues(factsData, metricName);
-  if (!values || values.length === 0) return null;
+  let bestTag = getBestTagForTTM(factsData, catalog.tags);
   
-  if (ttmType === 'last') {
-    const sortedValues = sortByEndDesc(values);
-    return applyScale(sortedValues[0]?.val, scale);
-  }
-  
-  const allReports = filterReportsWithFiled(values);
-  if (allReports.length === 0) return null;
-  
-  const sortedReports = sortByEndDesc(allReports);
-  const lastReport = sortedReports[0];
-  
-  if (lastReport.form === '10-K' || lastReport.form === '20-F' || lastReport.form === '40-F') {
-    const annualValue = getMetricValueInternal(factsData, metricName, lastReport.fy, undefined, null);
-    return applyScale(annualValue, scale);
-  }
-  
-  const quarterMatch = lastReport.fp?.match(/^Q([1-4])$/);
-  if (!quarterMatch) return null;
-  
-  const lastQuarterNum = parseInt(quarterMatch[1]);
-  const lastYear = lastReport.fy;
-  
-  const quarters = [];
-  for (let i = 3; i >= 0; i--) {
-    let quarterNum = lastQuarterNum - i;
-    let year = lastYear;
-    if (quarterNum <= 0) {
-      quarterNum += 4;
-      year -= 1;
+  if (bestTag && bestTag.values) {
+    const values = bestTag.values;
+    
+    if (ttmType === 'last') {
+      const sortedValues = sortByEndDesc(values);
+      return applyScale(sortedValues[0]?.val, scale);
     }
-    quarters.push({ year, quarterNum });
+    
+    const quarterly = values.filter(v => v.fp && v.fp !== 'FY');
+    const sortedQuarterly = [...quarterly].sort((a, b) => new Date(b.end) - new Date(a.end));
+    const last4 = sortedQuarterly.slice(0, 4);
+    
+    if (last4.length === 0) return null;
+    const sum = last4.reduce((acc, v) => acc + v.val, 0);
+    return applyScale(sum, scale);
   }
   
-  let sum = 0;
-  let validCount = 0;
-  
-  for (const q of quarters) {
-    const quarterParam = `q${q.quarterNum}`;
-    const value = getMetricValueInternal(factsData, metricName, q.year, quarterParam, null);
-    if (value !== null) {
-      sum += value;
-      validCount++;
-    }
-  }
-  
-  if (validCount === 0) return null;
-  return applyScale(sum, scale);
+  return null;
 }
 
 // ============ ЛОГИКА ДЛЯ ОТЧЁТОВ ============
@@ -765,7 +784,6 @@ function getReportByDate(recent, reportType, year, quarter, field) {
 
 // ============ ENDPOINTS ============
 
-// Health check
 app.get('/ping', (req, res) => {
   res.json({ status: 'alive', timestamp: new Date().toISOString() });
 });
@@ -774,13 +792,7 @@ app.get('/catalog', async (req, res) => {
   try {
     const list = [];
     for (const [key, val] of Object.entries(METRICS_CATALOG)) {
-      list.push({
-        alias: key,
-        ru: val.ru,
-        category: val.category,
-        ttm: val.ttm,
-        tags: val.tags
-      });
+      list.push({ alias: key, ru: val.ru, category: val.category, ttm: val.ttm, tags: val.tags });
     }
     res.json({ metrics: list, count: list.length });
   } catch (error) {
@@ -793,17 +805,9 @@ app.get('/validate/:metric', async (req, res) => {
     const resolved = resolveMetric(req.params.metric);
     if (!resolved) {
       const available = Object.keys(METRICS_CATALOG).slice(0, 20).join(', ');
-      return res.status(404).json({ 
-        error: 'Метрика не найдена',
-        available: available,
-        count: Object.keys(METRICS_CATALOG).length
-      });
+      return res.status(404).json({ error: 'Метрика не найдена', available, count: Object.keys(METRICS_CATALOG).length });
     }
-    res.json({ 
-      valid: true, 
-      metric: resolved,
-      info: METRICS_CATALOG[resolved]
-    });
+    res.json({ valid: true, metric: resolved, info: METRICS_CATALOG[resolved] });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -818,10 +822,7 @@ app.get('/metrics/:ticker', async (req, res) => {
     
     let rawMetrics = req.query.metrics || req.query.metric;
     if (!rawMetrics) {
-      return res.status(400).json({ 
-        error: 'Укажите metric или metrics',
-        hint: 'Используйте /catalog для списка метрик'
-      });
+      return res.status(400).json({ error: 'Укажите metric или metrics', hint: 'Используйте /catalog для списка метрик' });
     }
     
     const metricsList = rawMetrics.split('/').map(m => m.trim());
@@ -830,20 +831,12 @@ app.get('/metrics/:ticker', async (req, res) => {
     
     for (const m of metricsList) {
       const resolved = resolveMetric(m);
-      if (resolved) {
-        resolvedMetrics.push(resolved);
-      } else {
-        notFound.push(m);
-      }
+      if (resolved) resolvedMetrics.push(resolved);
+      else notFound.push(m);
     }
     
     if (resolvedMetrics.length === 0) {
-      return res.status(404).json({
-        error: 'Метрики не найдены',
-        notFound: notFound,
-        available: Object.keys(METRICS_CATALOG).slice(0, 20).join(', ') + '...',
-        totalAvailable: Object.keys(METRICS_CATALOG).length
-      });
+      return res.status(404).json({ error: 'Метрики не найдены', notFound, available: Object.keys(METRICS_CATALOG).slice(0, 20).join(', ') + '...', totalAvailable: Object.keys(METRICS_CATALOG).length });
     }
     
     const cik = await getCIK(ticker);
@@ -858,14 +851,7 @@ app.get('/metrics/:ticker', async (req, res) => {
       results[metric] = value !== null ? value : null;
     }
     
-    res.json({
-      ticker: ticker,
-      year: year || null,
-      quarter: quarter || null,
-      scale: scale,
-      metrics: results,
-      notFound: notFound.length > 0 ? notFound : undefined
-    });
+    res.json({ ticker, year: year || null, quarter: quarter || null, scale, metrics: results, notFound: notFound.length > 0 ? notFound : undefined });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -893,15 +879,11 @@ app.get('/info/:ticker', async (req, res) => {
       const date = filingDates[i];
       const year = date ? parseInt(date.substring(0, 4)) : null;
       
-      if (form === '10-K' && year && !available10k.includes(year)) {
-        available10k.push(year);
-      }
+      if (form === '10-K' && year && !available10k.includes(year)) available10k.push(year);
       if (form === '10-Q' && year) {
         if (!available10q[year]) available10q[year] = [];
         const quarter = getQuarterFromDate(date);
-        if (quarter && !available10q[year].includes(quarter)) {
-          available10q[year].push(quarter);
-        }
+        if (quarter && !available10q[year].includes(quarter)) available10q[year].push(quarter);
       }
     }
     
@@ -909,25 +891,13 @@ app.get('/info/:ticker', async (req, res) => {
     const last10Q = getReportByOrder(recent, '10-Q', 0, null);
     
     res.json({
-      cik: subData.cik,
-      name: subData.entityName,
-      ein: subData.ein || null,
-      description: subData.description || null,
-      category: subData.category || null,
-      fiscalYearEnd: subData.fiscalYearEnd || null,
-      stateOfIncorporation: subData.stateOfIncorporation || null,
-      phone: subData.phone || null,
-      website: subData.website || null,
-      investorWebsite: subData.investorWebsite || null,
-      businessAddress: subData.addresses?.business || null,
-      mailingAddress: subData.addresses?.mailing || null,
+      cik: subData.cik, name: subData.entityName, ein: subData.ein || null, description: subData.description || null,
+      category: subData.category || null, fiscalYearEnd: subData.fiscalYearEnd || null,
+      stateOfIncorporation: subData.stateOfIncorporation || null, phone: subData.phone || null,
+      website: subData.website || null, investorWebsite: subData.investorWebsite || null,
+      businessAddress: subData.addresses?.business || null, mailingAddress: subData.addresses?.mailing || null,
       formerNames: subData.formerNames || [],
-      reports: {
-        available_10k_years: available10k.sort((a, b) => b - a),
-        available_10q_years: available10q,
-        last_10K: last10K,
-        last_10Q: last10Q
-      }
+      reports: { available_10k_years: available10k.sort((a, b) => b - a), available_10q_years: available10q, last_10K: last10K, last_10Q: last10Q }
     });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -938,18 +908,14 @@ app.get('/submissions/:identifier', async (req, res) => {
   try {
     let identifier = req.params.identifier;
     let cik = null;
-    
     if (/^\d{1,10}$/.test(identifier)) {
       cik = identifier.replace(/^0+/, '').padStart(10, '0');
     } else {
       cik = await getCIK(identifier.toUpperCase());
     }
-    
     if (!cik) return res.status(404).json({ error: 'Тикер или CIK не найден' });
-    
     const subData = await getSubmissions(cik);
     if (!subData) return res.status(500).json({ error: 'Ошибка получения данных' });
-    
     res.json(subData);
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -961,24 +927,18 @@ app.get('/actions/reports/:ticker', async (req, res) => {
     const ticker = req.params.ticker.toUpperCase();
     const cik = await getCIK(ticker);
     if (!cik) return res.status(404).json({ error: 'Тикер не найден' });
-    
     const subData = await getSubmissions(cik);
     if (!subData) return res.status(500).json({ error: 'Ошибка получения данных' });
-    
     const recent = subData.filings?.recent || {};
     recent.cik = cik;
-    
     const reportType = req.query.type;
     if (!reportType) return res.status(400).json({ error: 'Укажите type (10-K, 10-Q, 8-K)' });
-    
     const mode = req.query.mode;
     const n = req.query.n ? parseInt(req.query.n) : null;
     const year = req.query.year ? parseInt(req.query.year) : null;
     const quarter = req.query.quarter ? parseInt(req.query.quarter) : null;
     const field = req.query.field || null;
-    
     let result = null;
-    
     if (mode === 'last' && n !== null) {
       result = getReportByOrder(recent, reportType, n, field);
     } else if (mode === 'date' && year !== null) {
@@ -986,7 +946,6 @@ app.get('/actions/reports/:ticker', async (req, res) => {
     } else {
       return res.status(400).json({ error: 'Неверные параметры. Используйте mode=last&n=N или mode=date&year=YYYY' });
     }
-    
     if (!result) return res.status(404).json({ error: 'Отчёт не найден' });
     res.json(result);
   } catch (error) {
@@ -999,10 +958,8 @@ app.get('/companyfacts/:ticker', async (req, res) => {
     const ticker = req.params.ticker.toUpperCase();
     const cik = await getCIK(ticker);
     if (!cik) return res.status(404).json({ error: 'Тикер не найден' });
-    
     const factsData = await getCompanyFacts(cik);
     if (!factsData) return res.status(500).json({ error: 'Ошибка получения данных' });
-    
     res.json(factsData);
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -1011,9 +968,7 @@ app.get('/companyfacts/:ticker', async (req, res) => {
 
 app.get('/company-tickers', async (req, res) => {
   try {
-    const response = await fetchWithRetry(`${SEC_BASE}/files/company_tickers.json`, {
-      headers: { 'User-Agent': USER_AGENT }
-    });
+    const response = await fetchWithRetry(`${SEC_BASE}/files/company_tickers.json`, { headers: { 'User-Agent': USER_AGENT } });
     const data = await response.json();
     res.json(data);
   } catch (error) {
@@ -1024,14 +979,5 @@ app.get('/company-tickers', async (req, res) => {
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`SEC Proxy server running on port ${PORT}`);
-  console.log(`Endpoints available:`);
-  console.log(`  GET /catalog`);
-  console.log(`  GET /validate/:metric`);
-  console.log(`  GET /metrics/:ticker`);
-  console.log(`  GET /info/:ticker`);
-  console.log(`  GET /submissions/:identifier`);
-  console.log(`  GET /actions/reports/:ticker`);
-  console.log(`  GET /companyfacts/:ticker`);
-  console.log(`  GET /company-tickers`);
-  console.log(`  GET /ping`);
+  console.log(`Endpoints available: /catalog, /validate/:metric, /metrics/:ticker, /info/:ticker, /submissions/:identifier, /actions/reports/:ticker, /companyfacts/:ticker, /company-tickers, /ping`);
 });
