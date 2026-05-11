@@ -21,13 +21,12 @@ let tickersCache = null;
 let tickersCacheTime = 0;
 const TICKERS_CACHE_TTL = 60 * 60 * 1000;
 
-// Кэш метрик
 const metricsCache = new Map();
-const METRICS_CACHE_TTL = 60 * 60 * 1000; // 1 час
+const METRICS_CACHE_TTL = 60 * 60 * 1000;
 
 // ============ ПОЛНЫЙ СПРАВОЧНИК МЕТРИК ============
 const METRICS_CATALOG = {
-  revenue: { tags: ['RevenueFromContractWithCustomerExcludingAssessedTax', 'RevenueFromContractWithCustomerIncludingAssessedTax', 'Revenues', 'SalesRevenueNet', 'TotalRevenues'], category: 'P&L', ttm: 'sum', ru: 'Выручка' },
+  revenue: { tags: ['RevenueFromContractWithCustomerExcludingAssessedTax', 'Revenues', 'SalesRevenueNet', 'TotalRevenues', 'RevenueFromContractWithCustomerIncludingAssessedTax'], category: 'P&L', ttm: 'sum', ru: 'Выручка' },
   cogs: { tags: ['CostOfGoodsAndServicesSold', 'CostOfRevenue', 'CostOfSales', 'CostsAndExpenses', 'CostOfServices'], category: 'P&L', ttm: 'sum', ru: 'Себестоимость' },
   grossprofit: { tags: ['GrossProfit'], category: 'P&L', ttm: 'sum', ru: 'Валовая прибыль' },
   rd: { tags: ['ResearchAndDevelopmentExpense', 'ResearchAndDevelopmentExpenseExcludingAcquiredInProcessResearchAndDevelopment'], category: 'P&L', ttm: 'sum', ru: 'R&D расходы' },
@@ -260,7 +259,7 @@ function findQuarterlyReport(values, year, fp, forms = ['10-Q', '6-K']) {
   return null;
 }
 
-// ============ НОВАЯ ЛОГИКА ПОИСКА ТЕГОВ ============
+// ============ ОБНОВЛЁННЫЕ ФУНКЦИИ ПОИСКА ТЕГОВ ============
 
 function getAllTagData(factsData, tags) {
   const taxonomies = ['us-gaap', 'ifrs-full', 'srt'];
@@ -301,7 +300,7 @@ function getAllTagData(factsData, tags) {
   return results;
 }
 
-function getBestTagForYear(factsData, tags, year) {
+function getBestTagByYear(factsData, tags, year) {
   const allTags = getAllTagData(factsData, tags);
   if (allTags.length === 0) return null;
   
@@ -309,19 +308,18 @@ function getBestTagForYear(factsData, tags, year) {
   let bestScore = -1;
   
   for (const tagInfo of allTags) {
-    // Ищем запись с нужным годом (по fy или по end)
-    const match = tagInfo.values.find(v => {
-      if (v.fy === year) return true;
-      const endYear = v.end ? new Date(v.end).getFullYear() : null;
-      return endYear === year;
-    });
+    const matchByFy = tagInfo.values.find(v => v.fy === year);
+    const matchByEnd = tagInfo.values.find(v => v.end && new Date(v.end).getFullYear() === year);
     
-    if (match) {
-      const score = (match.fy === year) ? 2 : 1;
+    if (matchByFy) {
+      const score = 2;
       if (score > bestScore) {
         bestScore = score;
-        bestMatch = { ...tagInfo, match };
+        bestMatch = { ...tagInfo, match: matchByFy };
       }
+    } else if (matchByEnd && bestScore < 1) {
+      bestScore = 1;
+      bestMatch = { ...tagInfo, match: matchByEnd };
     }
   }
   
@@ -346,14 +344,6 @@ function getBestTagForTTM(factsData, tags) {
   }
   
   return bestTag;
-}
-
-// ============ ЕДИНЫЙ ПОИСК ПО ТАКСОНОМИЯМ ============
-
-function findTagData(factsData, tags) {
-  const result = getBestTagForYear(factsData, tags, new Date().getFullYear());
-  if (result) return { taxonomy: result.taxonomy, tag: result.tag, data: result.data };
-  return null;
 }
 
 // ============ FETCH С RETRY ============
@@ -593,7 +583,7 @@ function getMetricValueInternal(factsData, metric, year, quarterParam, scale) {
   
   let bestTag = null;
   if (year !== undefined) {
-    bestTag = getBestTagForYear(factsData, catalog.tags, year);
+    bestTag = getBestTagByYear(factsData, catalog.tags, year);
   } else {
     bestTag = getBestTagForTTM(factsData, catalog.tags);
   }
@@ -609,7 +599,7 @@ function getMetricValueInternal(factsData, metric, year, quarterParam, scale) {
     for (const computeTag of catalog.compute) {
       let computeBestTag = null;
       if (year !== undefined) {
-        computeBestTag = getBestTagForYear(factsData, [computeTag], year);
+        computeBestTag = getBestTagByYear(factsData, [computeTag], year);
       } else {
         computeBestTag = getBestTagForTTM(factsData, [computeTag]);
       }
@@ -640,11 +630,12 @@ function getMetricValueInternal(factsData, metric, year, quarterParam, scale) {
 // ============ ОСНОВНАЯ ФУНКЦИЯ ПОИСКА (ОБЁРТКА) ============
 function getMetricValue(factsData, metric, year, quarterParam, scale) {
   const cacheKey = `${metric}:${year}:${quarterParam}`;
+  
   if (metricsCache.has(cacheKey)) {
     const cached = metricsCache.get(cacheKey);
     if (Date.now() - cached.time < METRICS_CACHE_TTL) {
-      const value = cached.value !== null ? applyScale(cached.value, scale) : null;
-      return value;
+      if (cached.value === null) return null;
+      return applyScale(cached.value, scale);
     }
   }
   
@@ -664,7 +655,7 @@ function getTTMValue(factsData, metricName, scale) {
   const catalog = METRICS_CATALOG[metricName];
   const ttmType = catalog?.ttm || 'sum';
   
-  let bestTag = getBestTagForTTM(factsData, catalog.tags);
+  const bestTag = getBestTagForTTM(factsData, catalog.tags);
   
   if (bestTag && bestTag.values) {
     const values = bestTag.values;
