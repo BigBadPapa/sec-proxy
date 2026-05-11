@@ -20,7 +20,11 @@ const DATA_BASE = 'https://data.sec.gov';
 // Кэши
 let tickersCache = null;
 let tickersCacheTime = 0;
-const TICKERS_CACHE_TTL = 2; // 1 час
+const TICKERS_CACHE_TTL = 60 * 60 * 1000; // 1 час
+
+// Кэш для результатов метрик (восстановлен)
+const metricsCache = new Map();
+const METRICS_CACHE_TTL = 60 * 1000; // 1 минута
 
 // ============ ПОЛНЫЙ СПРАВОЧНИК МЕТРИК ============
 const METRICS_CATALOG = {
@@ -296,6 +300,57 @@ function collectMetricValues(factsData, metricName) {
   return values;
 }
 
+// ============ НОВЫЕ ФУНКЦИИ ДЛЯ ПОИСКА ПО ГОДАМ ============
+
+// Находит тег, у которого есть данные за конкретный год
+function findTagForYear(factsData, tags, year) {
+  for (const tag of tags) {
+    const found = findTagData(factsData, [tag]);
+    if (!found) continue;
+    
+    const units = found.data.units;
+    const unitKey = Object.keys(units).find(k => k.includes('USD')) || Object.keys(units)[0];
+    const values = units[unitKey];
+    if (!values) continue;
+    
+    // Проверяем, есть ли данные за запрошенный год
+    const hasData = values.some(v => v.fy === year);
+    if (hasData) {
+      return { tag, data: found.data };
+    }
+  }
+  return null;
+}
+
+// Собирает значения из всех тегов (для TTM)
+function collectAllTagValues(factsData, tags) {
+  const allValues = [];
+  
+  for (const tag of tags) {
+    const found = findTagData(factsData, [tag]);
+    if (!found) continue;
+    
+    const units = found.data.units;
+    const unitKey = Object.keys(units).find(k => k.includes('USD')) || Object.keys(units)[0];
+    const values = units[unitKey];
+    if (!values) continue;
+    
+    allValues.push(...values);
+  }
+  
+  // Дедупликация по периоду (берём запись с самой свежей датой подачи)
+  const unique = new Map();
+  for (const v of allValues) {
+    const key = `${v.fy}-${v.fp}`;
+    const existing = unique.get(key);
+    if (!existing || new Date(v.filed) > new Date(existing.filed)) {
+      unique.set(key, v);
+    }
+  }
+  
+  return Array.from(unique.values()).sort((a, b) => new Date(b.end) - new Date(a.end));
+}
+
 // ============ ЕДИНЫЙ ПОИСК ПО ТАКСОНОМИЯМ ============
 
 function findTagData(factsData, tags) {
@@ -568,9 +623,18 @@ function getMetricValueInternal(factsData, metric, year, quarterParam, scale) {
   const isBalanceMetric = catalog.ttm === 'last';
   let result = null;
   
-  const found = findTagData(factsData, catalog.tags);
-  if (found) {
-    result = getValueFromTag(found.data, metric, year, quarterParam, isBalanceMetric);
+  // Для запросов с указанием года — ищем тег, у которого есть данные за этот год
+  if (year !== undefined) {
+    const found = findTagForYear(factsData, catalog.tags, year);
+    if (found) {
+      result = getValueFromTag(found.data, metric, year, quarterParam, isBalanceMetric);
+    }
+  } else {
+    // Для TTM — используем первый существующий тег (старая логика)
+    const found = findTagData(factsData, catalog.tags);
+    if (found) {
+      result = getValueFromTag(found.data, metric, year, quarterParam, isBalanceMetric);
+    }
   }
   
   if ((result === null || result === undefined) && catalog.compute && catalog.compute.length > 0) {
@@ -604,10 +668,26 @@ function getMetricValueInternal(factsData, metric, year, quarterParam, scale) {
 
 // ============ ОСНОВНАЯ ФУНКЦИЯ ПОИСКА (ОБЁРТКА) ============
 function getMetricValue(factsData, metric, year, quarterParam, scale) {
-  if (year === undefined && quarterParam === undefined) {
-    return getTTMValue(factsData, metric, scale);
+  // Кэширование
+  const cacheKey = `${metric}:${year}:${quarterParam}`;
+  if (metricsCache.has(cacheKey)) {
+    const cached = metricsCache.get(cacheKey);
+    if (Date.now() - cached.time < METRICS_CACHE_TTL) {
+      return cached.value !== null ? applyScale(cached.value, scale) : null;
+    }
   }
-  return getMetricValueInternal(factsData, metric, year, quarterParam, scale);
+  
+  let result;
+  if (year === undefined && quarterParam === undefined) {
+    result = getTTMValue(factsData, metric, scale);
+  } else {
+    result = getMetricValueInternal(factsData, metric, year, quarterParam, scale);
+  }
+  
+  // Сохраняем в кэш
+  metricsCache.set(cacheKey, { value: result !== null ? result : null, time: Date.now() });
+  
+  return result;
 }
 
 // ============ TTM ФУНКЦИЯ ============
@@ -615,15 +695,16 @@ function getTTMValue(factsData, metricName, scale) {
   const catalog = METRICS_CATALOG[metricName];
   const ttmType = catalog?.ttm || 'sum';
   
-  const values = collectMetricValues(factsData, metricName);
-  if (!values || values.length === 0) return null;
+  // Для TTM собираем значения из ВСЕХ тегов
+  const allTagValues = collectAllTagValues(factsData, catalog.tags);
+  if (!allTagValues || allTagValues.length === 0) return null;
   
   if (ttmType === 'last') {
-    const sortedValues = sortByEndDesc(values);
+    const sortedValues = sortByEndDesc(allTagValues);
     return applyScale(sortedValues[0]?.val, scale);
   }
   
-  const allReports = filterReportsWithFiled(values);
+  const allReports = filterReportsWithFiled(allTagValues);
   if (allReports.length === 0) return null;
   
   const sortedReports = sortByEndDesc(allReports);
