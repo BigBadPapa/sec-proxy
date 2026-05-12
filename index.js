@@ -303,7 +303,7 @@ function collectMetricValues(factsData, metricName) {
 // ============ НОВЫЕ ФУНКЦИИ ДЛЯ ПОИСКА ПО ГОДАМ ============
 
 // Находит тег, у которого есть данные за конкретный год
-function findTagForYear(factsData, tags, year) {
+function findTagForYear(factsData, tags, year, fp) {
   for (const tag of tags) {
     const found = findTagData(factsData, [tag]);
     if (!found) continue;
@@ -313,9 +313,16 @@ function findTagForYear(factsData, tags, year) {
     const values = units[unitKey];
     if (!values) continue;
     
-    // Проверяем, есть ли данные за запрошенный год
-    const hasData = values.some(v => v.fy === year);
-    if (hasData) {
+    let hasMatch;
+    if (fp) {
+      // Если указан fp — проверяем наличие конкретной записи
+      hasMatch = values.some(v => v.fy === year && v.fp === fp);
+    } else {
+      // Если fp не указан — проверяем любую запись за год
+      hasMatch = values.some(v => v.fy === year);
+    }
+    
+    if (hasMatch) {
       return { tag, data: found.data };
     }
   }
