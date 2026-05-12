@@ -20,11 +20,10 @@ const DATA_BASE = 'https://data.sec.gov';
 // Кэши
 let tickersCache = null;
 let tickersCacheTime = 0;
-const TICKERS_CACHE_TTL = 1 * 1000; // 1 час
+const TICKERS_CACHE_TTL = 60 * 60 * 1000; // 1 час
 
-// Кэш для результатов метрик (восстановлен)
 const metricsCache = new Map();
-const METRICS_CACHE_TTL = 1 * 1000; // 1 минута
+const METRICS_CACHE_TTL = 60 * 1000; // 1 минута
 
 // ============ ПОЛНЫЙ СПРАВОЧНИК МЕТРИК ============
 const METRICS_CATALOG = {
@@ -302,7 +301,7 @@ function collectMetricValues(factsData, metricName) {
 
 // ============ НОВЫЕ ФУНКЦИИ ДЛЯ ПОИСКА ПО ГОДАМ ============
 
-// Находит тег, у которого есть данные за конкретный год
+// Находит тег, у которого есть данные за конкретный год и квартал
 function findTagForYear(factsData, tags, year, fp) {
   for (const tag of tags) {
     const found = findTagData(factsData, [tag]);
@@ -319,24 +318,8 @@ function findTagForYear(factsData, tags, year, fp) {
     } else {
       hasMatch = values.some(v => v.fy === year);
     }
-
-    //===========ЛОГ===========
-    console.log(`Checking tag: ${tag}`);
-    console.log(`Looking for fy=${year}, fp=${fp}`);
-    console.log(`Available (fy, fp) in this tag:`, values.map(v => ({ fy: v.fy, fp: v.fp })));
-    //===========ЛОГ===========
     
     if (hasMatch) {
-      // ========== ВСТАВИТЬ ЭТОТ БЛОК ==========
-      console.log(`SELECTED TAG: ${tag}`);
-      console.log(`Values in selected tag for year ${year}:`, 
-        values.filter(v => v.fy === year).map(v => ({ 
-          fy: v.fy, 
-          fp: v.fp, 
-          form: v.form, 
-          val: v.val 
-        })));
-      // ========== КОНЕЦ БЛОКА ==========
       return { tag, data: found.data };
     }
   }
@@ -525,6 +508,7 @@ function getValueFromTag(tagData, metricName, year, quarterParam, isBalanceMetri
           const annual = findAnnualReport(sortedValues, year);
           result = annual?.val || null;
         } else {
+          // q4 = 10-K − YTD Q3
           const annual10K = findAnnualReport(sortedValues, year);
           
           let ytdQ3 = null;
@@ -552,16 +536,6 @@ function getValueFromTag(tagData, metricName, year, quarterParam, isBalanceMetri
         const targetFp = `Q${quarterInfo.num}`;
         
         if (quarterInfo.type === 'quarter') {
-
-          // ========== ВСТАВИТЬ ЛОГ ЗДЕСЬ ==========
-          if (year === 2025 && quarterParam === 'q1' && metricName === 'revenue') {
-            console.log('=== BEFORE FILTER ===');
-            console.log('targetFp:', targetFp);
-            console.log('All values in sortedValues (fy, fp, form, val):', 
-              sortedValues.map(v => ({ fy: v.fy, fp: v.fp, form: v.form, val: v.val })));
-          }
-          // ========== КОНЕЦ ВСТАВКИ ==========
-          
           // q1, q2, q3: только за квартал (3 месяца)
           const formsToTry = ['10-Q', '6-K'];
           let candidates = [];
@@ -642,15 +616,7 @@ function getValueFromTag(tagData, metricName, year, quarterParam, isBalanceMetri
       }
     }
   }
-
-  //===========ЛОГ============
-  if (year === 2025 && quarterParam === 'q1' && metricName === 'revenue') {
-  console.log('=== FINAL RESULT IN getValueFromTag ===');
-  console.log('result:', result);
-  console.log('result type:', typeof result);
-}
-  //===========ЛОГ============
- 
+  
   return result;
 }
 
@@ -662,37 +628,35 @@ function getMetricValueInternal(factsData, metric, year, quarterParam, scale) {
   const isBalanceMetric = catalog.ttm === 'last';
   let result = null;
   
-  if (year !== undefined) {
-    // Для q4 не используем fp при поиске тега (нужно найти 10-K и YTD Q3)
-    let useFpForTagSearch = true;
-    let fp = null;
-    
-    if (quarterParam) {
-      const quarterInfo = parseQuarterString(quarterParam);
-      if (quarterInfo && quarterInfo.type === 'quarter') {
-        if (quarterInfo.num === 4) {
-          useFpForTagSearch = false;
-        } else {
-          fp = `Q${quarterInfo.num}`;
-        }
+  // Определяем, как искать тег
+  let useFpForTagSearch = true;
+  let fp = null;
+  let useYearOnlyForTagSearch = false;
+  
+  if (year !== undefined && quarterParam) {
+    const quarterInfo = parseQuarterString(quarterParam);
+    if (quarterInfo && quarterInfo.type === 'quarter') {
+      if (quarterInfo.num === 4) {
+        // Для q4 ищем тег с любыми данными за этот год
+        useYearOnlyForTagSearch = true;
+        useFpForTagSearch = false;
+      } else {
+        fp = `Q${quarterInfo.num}`;
       }
     }
-    
-    let found;
-    if (useFpForTagSearch && fp) {
-      found = findTagForYear(factsData, catalog.tags, year, fp);
-    } else {
-      found = findTagData(factsData, catalog.tags);
-    }
-    
-    if (found) {
-      result = getValueFromTag(found.data, metric, year, quarterParam, isBalanceMetric);
-    }
+  }
+  
+  let found;
+  if (year !== undefined && useFpForTagSearch && fp) {
+    found = findTagForYear(factsData, catalog.tags, year, fp);
+  } else if (year !== undefined && useYearOnlyForTagSearch) {
+    found = findTagForYear(factsData, catalog.tags, year, null);
   } else {
-    const found = findTagData(factsData, catalog.tags);
-    if (found) {
-      result = getValueFromTag(found.data, metric, year, quarterParam, isBalanceMetric);
-    }
+    found = findTagData(factsData, catalog.tags);
+  }
+  
+  if (found) {
+    result = getValueFromTag(found.data, metric, year, quarterParam, isBalanceMetric);
   }
   
   if ((result === null || result === undefined) && catalog.compute && catalog.compute.length > 0) {
@@ -726,36 +690,6 @@ function getMetricValueInternal(factsData, metric, year, quarterParam, scale) {
 
 // ============ ОСНОВНАЯ ФУНКЦИЯ ПОИСКА (ОБЁРТКА) ============
 function getMetricValue(factsData, metric, year, quarterParam, scale) {
-
-  // ========== ЕДИНЫЙ БЛОК ЛОГИРОВАНИЯ ==========
-  console.log('=== SEC PROXY DEBUG ===');
-  console.log('metric:', metric);
-  console.log('year:', year);
-  console.log('quarterParam:', quarterParam);
-  console.log('scale:', scale);
-  
-  // Для GOOG revenue 2025 q1 — специальный вывод
-  if (metric === 'revenue' && year === 2025 && quarterParam === 'q1') {
-    const catalog = METRICS_CATALOG[metric];
-    if (catalog && catalog.tags) {
-      for (const tag of catalog.tags) {
-        const found = findTagData(factsData, [tag]);
-        if (found) {
-          const units = found.data.units;
-          const unitKey = Object.keys(units).find(k => k.includes('USD')) || Object.keys(units)[0];
-          const values = units[unitKey];
-          if (values) {
-            const matches = values.filter(v => v.fy === 2025 && v.fp === 'Q1');
-            console.log(`Tag: ${tag}`);
-            console.log(`  Has data for 2025? ${values.some(v => v.fy === 2025)}`);
-            console.log(`  Q1 2025 values:`, matches.map(v => ({ val: v.val, form: v.form, end: v.end })));
-          }
-        }
-      }
-    }
-  }
-  // ========== КОНЕЦ БЛОКА ЛОГИРОВАНИЯ ==========
-  
   // Кэширование
   const cacheKey = `${metric}:${year}:${quarterParam}`;
   if (metricsCache.has(cacheKey)) {
@@ -765,7 +699,6 @@ function getMetricValue(factsData, metric, year, quarterParam, scale) {
     }
   }
   
-  // Получаем значение
   let value;
   if (year === undefined && quarterParam === undefined) {
     value = getTTMValue(factsData, metric, scale);
@@ -773,16 +706,9 @@ function getMetricValue(factsData, metric, year, quarterParam, scale) {
     value = getMetricValueInternal(factsData, metric, year, quarterParam, scale);
   }
   
-  // Логирование результата
-  if (metric === 'revenue' && year === 2025 && quarterParam === 'q1') {
-    console.log('=== FINAL RETURN FROM getMetricValue ===');
-    console.log('value:', value);
-  }
-  
   // Сохраняем в кэш (без масштаба, чтобы не масштабировать дважды)
   metricsCache.set(cacheKey, { value: value !== null ? value : null, time: Date.now() });
   
-  // Применяем масштаб и возвращаем
   return value !== null ? applyScale(value, scale) : null;
 }
 
