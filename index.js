@@ -664,7 +664,15 @@ function getMetricValueInternal(factsData, metric, year, quarterParam, scale) {
   
   // Для запросов с указанием года — ищем тег, у которого есть данные за этот год
   if (year !== undefined) {
-    const found = findTagForYear(factsData, catalog.tags, year);
+    // Преобразуем quarterParam в fp строку (Q1, Q2, Q3, Q4) для точного поиска тега
+    let fp = null;
+    if (quarterParam) {
+      const quarterInfo = parseQuarterString(quarterParam);
+      if (quarterInfo && quarterInfo.type === 'quarter') {
+        fp = `Q${quarterInfo.num}`;
+      }
+    }
+    const found = findTagForYear(factsData, catalog.tags, year, fp);
     if (found) {
       result = getValueFromTag(found.data, metric, year, quarterParam, isBalanceMetric);
     }
@@ -675,13 +683,6 @@ function getMetricValueInternal(factsData, metric, year, quarterParam, scale) {
       result = getValueFromTag(found.data, metric, year, quarterParam, isBalanceMetric);
     }
   }
-
-  //===========ЛОГ===============
-    if (year === 2025 && quarterParam === 'q1' && metric === 'revenue') {
-      console.log('=== RESULT AFTER getValueFromTag ===');
-      console.log('result:', result);
-  }
-    //===========ЛОГ===============
   
   if ((result === null || result === undefined) && catalog.compute && catalog.compute.length > 0) {
     let sum = null;
