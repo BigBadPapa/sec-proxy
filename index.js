@@ -319,6 +319,12 @@ function findTagForYear(factsData, tags, year, fp) {
     } else {
       hasMatch = values.some(v => v.fy === year);
     }
+
+    //===========ЛОГ===========
+    console.log(`Checking tag: ${tag}`);
+    console.log(`Looking for fy=${year}, fp=${fp}`);
+    console.log(`Available (fy, fp) in this tag:`, values.map(v => ({ fy: v.fy, fp: v.fp })));
+    //===========ЛОГ===========
     
     if (hasMatch) {
       // ========== ВСТАВИТЬ ЭТОТ БЛОК ==========
