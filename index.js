@@ -538,6 +538,16 @@ function getValueFromTag(tagData, metricName, year, quarterParam, isBalanceMetri
         const targetFp = `Q${quarterInfo.num}`;
         
         if (quarterInfo.type === 'quarter') {
+
+          // ========== ВСТАВИТЬ ЛОГ ЗДЕСЬ ==========
+          if (year === 2025 && quarterParam === 'q1' && metricName === 'revenue') {
+            console.log('=== BEFORE FILTER ===');
+            console.log('targetFp:', targetFp);
+            console.log('All values in sortedValues (fy, fp, form, val):', 
+              sortedValues.map(v => ({ fy: v.fy, fp: v.fp, form: v.form, val: v.val })));
+          }
+          // ========== КОНЕЦ ВСТАВКИ ==========
+          
           // q1, q2, q3: только за квартал (3 месяца)
           const formsToTry = ['10-Q', '6-K'];
           let candidates = [];
