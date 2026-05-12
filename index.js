@@ -315,14 +315,22 @@ function findTagForYear(factsData, tags, year, fp) {
     
     let hasMatch;
     if (fp) {
-      // Если указан fp — проверяем наличие конкретной записи
       hasMatch = values.some(v => v.fy === year && v.fp === fp);
     } else {
-      // Если fp не указан — проверяем любую запись за год
       hasMatch = values.some(v => v.fy === year);
     }
     
     if (hasMatch) {
+      // ========== ВСТАВИТЬ ЭТОТ БЛОК ==========
+      console.log(`SELECTED TAG: ${tag}`);
+      console.log(`Values in selected tag for year ${year}:`, 
+        values.filter(v => v.fy === year).map(v => ({ 
+          fy: v.fy, 
+          fp: v.fp, 
+          form: v.form, 
+          val: v.val 
+        })));
+      // ========== КОНЕЦ БЛОКА ==========
       return { tag, data: found.data };
     }
   }
