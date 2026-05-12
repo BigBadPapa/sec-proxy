@@ -662,22 +662,33 @@ function getMetricValueInternal(factsData, metric, year, quarterParam, scale) {
   const isBalanceMetric = catalog.ttm === 'last';
   let result = null;
   
-  // Для запросов с указанием года — ищем тег, у которого есть данные за этот год
   if (year !== undefined) {
-    // Преобразуем quarterParam в fp строку (Q1, Q2, Q3, Q4) для точного поиска тега
+    // Для q4 не используем fp при поиске тега (нужно найти 10-K и YTD Q3)
+    let useFpForTagSearch = true;
     let fp = null;
+    
     if (quarterParam) {
       const quarterInfo = parseQuarterString(quarterParam);
       if (quarterInfo && quarterInfo.type === 'quarter') {
-        fp = `Q${quarterInfo.num}`;
+        if (quarterInfo.num === 4) {
+          useFpForTagSearch = false;
+        } else {
+          fp = `Q${quarterInfo.num}`;
+        }
       }
     }
-    const found = findTagForYear(factsData, catalog.tags, year, fp);
+    
+    let found;
+    if (useFpForTagSearch && fp) {
+      found = findTagForYear(factsData, catalog.tags, year, fp);
+    } else {
+      found = findTagData(factsData, catalog.tags);
+    }
+    
     if (found) {
       result = getValueFromTag(found.data, metric, year, quarterParam, isBalanceMetric);
     }
   } else {
-    // Для TTM — используем первый существующий тег (старая логика)
     const found = findTagData(factsData, catalog.tags);
     if (found) {
       result = getValueFromTag(found.data, metric, year, quarterParam, isBalanceMetric);
