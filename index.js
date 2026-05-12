@@ -668,6 +668,37 @@ function getMetricValueInternal(factsData, metric, year, quarterParam, scale) {
 
 // ============ ОСНОВНАЯ ФУНКЦИЯ ПОИСКА (ОБЁРТКА) ============
 function getMetricValue(factsData, metric, year, quarterParam, scale) {
+
+  // ========== ЕДИНЫЙ БЛОК ЛОГИРОВАНИЯ ==========
+  console.log('=== SEC PROXY DEBUG ===');
+  console.log('metric:', metric);
+  console.log('year:', year);
+  console.log('quarterParam:', quarterParam);
+  console.log('scale:', scale);
+  
+  // Для GOOG revenue 2025 q1 — специальный вывод
+  if (metric === 'revenue' && year === 2025 && quarterParam === 'q1') {
+    // Получаем все значения из всех тегов
+    const catalog = METRICS_CATALOG[metric];
+    if (catalog && catalog.tags) {
+      for (const tag of catalog.tags) {
+        const found = findTagData(factsData, [tag]);
+        if (found) {
+          const units = found.data.units;
+          const unitKey = Object.keys(units).find(k => k.includes('USD')) || Object.keys(units)[0];
+          const values = units[unitKey];
+          if (values) {
+            const matches = values.filter(v => v.fy === 2025 && v.fp === 'Q1');
+            console.log(`Tag: ${tag}`);
+            console.log(`  Has data for 2025? ${values.some(v => v.fy === 2025)}`);
+            console.log(`  Q1 2025 values:`, matches.map(v => ({ val: v.val, form: v.form, end: v.end })));
+          }
+        }
+      }
+    }
+  }
+  // ========== КОНЕЦ БЛОКА ЛОГИРОВАНИЯ ==========
+  
   // Кэширование
   const cacheKey = `${metric}:${year}:${quarterParam}`;
   if (metricsCache.has(cacheKey)) {
