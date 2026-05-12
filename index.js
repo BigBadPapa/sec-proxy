@@ -618,7 +618,15 @@ function getValueFromTag(tagData, metricName, year, quarterParam, isBalanceMetri
       }
     }
   }
-  
+
+  //===========ЛОГ============
+  if (year === 2025 && quarterParam === 'q1' && metricName === 'revenue') {
+  console.log('=== FINAL RESULT IN getValueFromTag ===');
+  console.log('result:', result);
+  console.log('result type:', typeof result);
+}
+  //===========ЛОГ============
+ 
   return result;
 }
 
@@ -643,6 +651,13 @@ function getMetricValueInternal(factsData, metric, year, quarterParam, scale) {
       result = getValueFromTag(found.data, metric, year, quarterParam, isBalanceMetric);
     }
   }
+
+  //===========ЛОГ===============
+    if (year === 2025 && quarterParam === 'q1' && metric === 'revenue') {
+      console.log('=== RESULT AFTER getValueFromTag ===');
+      console.log('result:', result);
+  }
+    //===========ЛОГ===============
   
   if ((result === null || result === undefined) && catalog.compute && catalog.compute.length > 0) {
     let sum = null;
@@ -685,7 +700,6 @@ function getMetricValue(factsData, metric, year, quarterParam, scale) {
   
   // Для GOOG revenue 2025 q1 — специальный вывод
   if (metric === 'revenue' && year === 2025 && quarterParam === 'q1') {
-    // Получаем все значения из всех тегов
     const catalog = METRICS_CATALOG[metric];
     if (catalog && catalog.tags) {
       for (const tag of catalog.tags) {
@@ -715,17 +729,25 @@ function getMetricValue(factsData, metric, year, quarterParam, scale) {
     }
   }
   
-  let result;
+  // Получаем значение
+  let value;
   if (year === undefined && quarterParam === undefined) {
-    result = getTTMValue(factsData, metric, scale);
+    value = getTTMValue(factsData, metric, scale);
   } else {
-    result = getMetricValueInternal(factsData, metric, year, quarterParam, scale);
+    value = getMetricValueInternal(factsData, metric, year, quarterParam, scale);
   }
   
-  // Сохраняем в кэш
-  metricsCache.set(cacheKey, { value: result !== null ? result : null, time: Date.now() });
+  // Логирование результата
+  if (metric === 'revenue' && year === 2025 && quarterParam === 'q1') {
+    console.log('=== FINAL RETURN FROM getMetricValue ===');
+    console.log('value:', value);
+  }
   
-  return result;
+  // Сохраняем в кэш (без масштаба, чтобы не масштабировать дважды)
+  metricsCache.set(cacheKey, { value: value !== null ? value : null, time: Date.now() });
+  
+  // Применяем масштаб и возвращаем
+  return value !== null ? applyScale(value, scale) : null;
 }
 
 // ============ TTM ФУНКЦИЯ ============
