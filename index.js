@@ -20,10 +20,10 @@ const DATA_BASE = 'https://data.sec.gov';
 // Кэши
 let tickersCache = null;
 let tickersCacheTime = 0;
-const TICKERS_CACHE_TTL = 1 * 1000; // 1 час
+const TICKERS_CACHE_TTL = 60 * 60 * 1000; // 1 час
 
 const metricsCache = new Map();
-const METRICS_CACHE_TTL = 1 * 1000; // 1 минута
+const METRICS_CACHE_TTL = 60 * 1000; // 1 минута
 
 // ============ ПОЛНЫЙ СПРАВОЧНИК МЕТРИК ============
 const METRICS_CATALOG = {
@@ -621,7 +621,7 @@ function getValueFromTag(tagData, metricName, year, quarterParam, isBalanceMetri
 }
 
 // ============ ОСНОВНАЯ ЛОГИКА ПОИСКА (ВНУТРЕННЯЯ) ============
-function getMetricValueInternal(factsData, metric, year, quarterParam, scale) {
+function getMetricValueInternal(factsData, metric, year, quarterParam, scale, ticker) {
   const catalog = METRICS_CATALOG[metric];
   if (!catalog) return null;
   
@@ -637,7 +637,6 @@ function getMetricValueInternal(factsData, metric, year, quarterParam, scale) {
     const quarterInfo = parseQuarterString(quarterParam);
     if (quarterInfo && quarterInfo.type === 'quarter') {
       if (quarterInfo.num === 4) {
-        // Для q4 ищем тег с любыми данными за этот год
         useYearOnlyForTagSearch = true;
         useFpForTagSearch = false;
       } else {
@@ -689,9 +688,9 @@ function getMetricValueInternal(factsData, metric, year, quarterParam, scale) {
 }
 
 // ============ ОСНОВНАЯ ФУНКЦИЯ ПОИСКА (ОБЁРТКА) ============
-function getMetricValue(factsData, metric, year, quarterParam, scale) {
-  // Кэширование
-  const cacheKey = `${metric}:${year}:${quarterParam}`;
+function getMetricValue(factsData, metric, year, quarterParam, scale, ticker) {
+  // Кэширование с учётом тикера
+  const cacheKey = `${ticker}:${metric}:${year}:${quarterParam}`;
   if (metricsCache.has(cacheKey)) {
     const cached = metricsCache.get(cacheKey);
     if (Date.now() - cached.time < METRICS_CACHE_TTL) {
@@ -701,9 +700,9 @@ function getMetricValue(factsData, metric, year, quarterParam, scale) {
   
   let value;
   if (year === undefined && quarterParam === undefined) {
-    value = getTTMValue(factsData, metric, scale);
+    value = getTTMValue(factsData, metric, scale, ticker);
   } else {
-    value = getMetricValueInternal(factsData, metric, year, quarterParam, scale);
+    value = getMetricValueInternal(factsData, metric, year, quarterParam, scale, ticker);
   }
   
   // Сохраняем в кэш (без масштаба, чтобы не масштабировать дважды)
@@ -713,7 +712,7 @@ function getMetricValue(factsData, metric, year, quarterParam, scale) {
 }
 
 // ============ TTM ФУНКЦИЯ ============
-function getTTMValue(factsData, metricName, scale) {
+function getTTMValue(factsData, metricName, scale, ticker) {
   const catalog = METRICS_CATALOG[metricName];
   const ttmType = catalog?.ttm || 'sum';
   
@@ -733,7 +732,7 @@ function getTTMValue(factsData, metricName, scale) {
   const lastReport = sortedReports[0];
   
   if (lastReport.form === '10-K' || lastReport.form === '20-F' || lastReport.form === '40-F') {
-    const annualValue = getMetricValueInternal(factsData, metricName, lastReport.fy, undefined, null);
+    const annualValue = getMetricValueInternal(factsData, metricName, lastReport.fy, undefined, null, ticker);
     return applyScale(annualValue, scale);
   }
   
@@ -759,7 +758,7 @@ function getTTMValue(factsData, metricName, scale) {
   
   for (const q of quarters) {
     const quarterParam = `q${q.quarterNum}`;
-    const value = getMetricValueInternal(factsData, metricName, q.year, quarterParam, null);
+    const value = getMetricValueInternal(factsData, metricName, q.year, quarterParam, null, ticker);
     if (value !== null) {
       sum += value;
       validCount++;
@@ -957,7 +956,7 @@ app.get('/metrics/:ticker', async (req, res) => {
     
     const results = {};
     for (const metric of resolvedMetrics) {
-      const value = getMetricValue(factsData, metric, year, quarter, scale);
+      const value = getMetricValue(factsData, metric, year, quarter, scale, ticker);
       results[metric] = value !== null ? value : null;
     }
     
