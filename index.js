@@ -446,11 +446,31 @@ function searchValueInAllTags(factsData, catalog, year, quarterParam, isBalanceM
   
   log(`searchValueInAllTags: start, year=${year}, quarterParam=${quarterParam}, isBalance=${isBalanceMetric}`);
   
+  // ========== СПЕЦИАЛЬНАЯ ОБРАБОТКА ДЛЯ q4 ==========
+  if (quarterParam === 'q4') {
+    log(`searchValueInAllTags: специальная обработка q4 для year=${year}`);
+    
+    const allValues = collectMetricValues(factsData, catalog.alias || Object.keys(METRICS_CATALOG).find(k => METRICS_CATALOG[k] === catalog));
+    if (!allValues) return null;
+    
+    const annual10K = allValues.find(v => v.fy === year && v.form === '10-K');
+    const ytdQ3 = allValues.find(v => v.fy === year && v.fp === 'Q3' && v.form === '10-Q');
+    
+    if (annual10K && ytdQ3) {
+      const result = annual10K.val - ytdQ3.val;
+      log(`searchValueInAllTags: q4 = ${annual10K.val} - ${ytdQ3.val} = ${result}`);
+      return result;
+    }
+    
+    log(`searchValueInAllTags: q4 не удалось вычислить (annual10K=${!!annual10K}, ytdQ3=${!!ytdQ3})`);
+    return null;
+  }
+  // ========== КОНЕЦ СПЕЦИАЛЬНОЙ ОБРАБОТКИ ==========
+  
   // 1. Перебираем все прямые теги в порядке приоритета
   for (const tag of tags) {
     log(`searchValueInAllTags: проверяем тег ${tag}`);
     
-    // Получаем значения из этого тега
     const tagData = findTagData(factsData, [tag]);
     if (!tagData) {
       log(`searchValueInAllTags: тег ${tag} не найден в данных`);
@@ -471,7 +491,7 @@ function searchValueInAllTags(factsData, catalog, year, quarterParam, isBalanceM
     }
     
     // Если запрошен квартал, проверяем наличие данных за этот квартал
-    if (isQuarterRequest) {
+    if (isQuarterRequest && quarterParam !== 'q4') {
       const quarterInfo = parseQuarterString(quarterParam);
       if (quarterInfo) {
         const targetFp = `Q${quarterInfo.num}`;
@@ -529,7 +549,6 @@ function searchValueInAllTags(factsData, catalog, year, quarterParam, isBalanceM
   log(`searchValueInAllTags: результат не найден`);
   return null;
 }
-
 // ============ ОСНОВНАЯ ЛОГИКА ПОИСКА ЗНАЧЕНИЯ ИЗ ТЕГА ============
 
 function getValueFromTag(tagData, metricName, year, quarterParam, isBalanceMetric) {
