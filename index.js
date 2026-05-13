@@ -16,7 +16,7 @@ const QUARTER_DAYS = {
 // Каждый кэш можно включить/выключить, настроить TTL и максимальный размер
 const CACHE_CONFIG = {
   // Список всех компаний (тикер → CIK)
-  tickersCache: { enabled: true, ttl: 24 * 60 * 60 * 1000, maxSize: 1 },
+  tickersCache: { enabled: true, ttl: 24 * 60 * 60 * 1000, maxSize: 1 }, //24 часа
   // Быстрые контакты (тикер → CIK) для частых запросов
   cikCache: { enabled: true, ttl: 24 * 60 * 60 * 1000, maxSize: 500 },
   // Полные финансовые данные компании (companyfacts) - САМЫЙ ВАЖНЫЙ
