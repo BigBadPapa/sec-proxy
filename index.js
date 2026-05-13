@@ -440,7 +440,7 @@ function collectMetricValues(factsData, metricName) {
 }
 
 // Новая унифицированная функция поиска значения по всем тегам
-function searchValueInAllTags(factsData, catalog, year, quarterParam, isBalanceMetric) {
+function searchValueInAllTags(factsData, catalog, year, quarterParam, isBalanceMetric, ticker) {
   const tags = catalog.tags;
   const isQuarterRequest = quarterParam !== undefined && quarterParam !== null && quarterParam !== 'annual' && quarterParam !== 'год';
   
@@ -483,8 +483,7 @@ function searchValueInAllTags(factsData, catalog, year, quarterParam, isBalanceM
     }
     
     // Если дошли сюда — в теге есть нужные данные, пытаемся получить значение
-    // Для q4 проверка на наличие данных пропускается
-    const result = getValueFromTag(tagData.data, catalog.alias || Object.keys(METRICS_CATALOG).find(k => METRICS_CATALOG[k] === catalog), year, quarterParam, isBalanceMetric);
+    const result = getValueFromTag(tagData.data, catalog.alias || Object.keys(METRICS_CATALOG).find(k => METRICS_CATALOG[k] === catalog), year, quarterParam, isBalanceMetric, ticker, factsData);
     if (result !== null && result !== undefined) {
       log(`searchValueInAllTags: найден результат в теге ${tag}: ${result}`);
       return result;
@@ -505,7 +504,7 @@ function searchValueInAllTags(factsData, catalog, year, quarterParam, isBalanceM
         continue;
       }
       
-      const computeResult = getValueFromTag(computeFound.data, catalog.alias || Object.keys(METRICS_CATALOG).find(k => METRICS_CATALOG[k] === catalog), year, quarterParam, isBalanceMetric);
+      const computeResult = getValueFromTag(computeFound.data, catalog.alias || Object.keys(METRICS_CATALOG).find(k => METRICS_CATALOG[k] === catalog), year, quarterParam, isBalanceMetric, ticker, factsData);
       if (computeResult !== null && computeResult !== undefined) {
         if (catalog.operation === 'sum') {
           if (sum === null) sum = 0;
@@ -532,7 +531,7 @@ function searchValueInAllTags(factsData, catalog, year, quarterParam, isBalanceM
 
 // ============ ОСНОВНАЯ ЛОГИКА ПОИСКА ЗНАЧЕНИЯ ИЗ ТЕГА ============
 
-function getValueFromTag(tagData, metricName, year, quarterParam, isBalanceMetric) {
+function getValueFromTag(tagData, metricName, year, quarterParam, isBalanceMetric, ticker, factsData) {
   const catalog = METRICS_CATALOG[metricName];
   if (!catalog) {
     log(`getValueFromTag: метрика ${metricName} не найдена`);
@@ -606,31 +605,19 @@ function getValueFromTag(tagData, metricName, year, quarterParam, isBalanceMetri
       // Q4
       if (quarterInfo.num === 4) {
         if (quarterInfo.type === 'ytd') {
-          const annual = findAnnualReport(sortedValues, year);
-          result = annual?.val || null;
+          const annual = getMetricValueInternal(factsData, metricName, year, undefined, null, ticker);
+          result = annual !== null ? annual : null;
           log(`getValueFromTag: 4q -> годовой отчёт: ${result}`);
         } else {
-          // q4 = 10-K − YTD Q3
-          const annual10K = findAnnualReport(sortedValues, year);
+          // q4 = 10-K − 3q (YTD за 9 месяцев)
+          const annual10K = getMetricValueInternal(factsData, metricName, year, undefined, null, ticker);
+          const ytdQ3 = getMetricValueInternal(factsData, metricName, year, '3q', null, ticker);
           
-          let ytdQ3 = null;
-          const quarterForms = ['10-Q', '6-K'];
-          for (const form of quarterForms) {
-            ytdQ3 = sortedValues.find(v => {
-              if (v.fy !== year) return false;
-              if (v.fp !== 'Q3') return false;
-              if (v.form !== form) return false;
-              const days = (new Date(v.end) - new Date(v.start)) / (1000 * 60 * 60 * 24);
-              return days >= QUARTER_DAYS[3].min && days <= QUARTER_DAYS[3].max;
-            });
-            if (ytdQ3) break;
-          }
-          
-          if (annual10K && ytdQ3) {
-            result = annual10K.val - ytdQ3.val;
-            log(`getValueFromTag: q4 = ${annual10K.val} - ${ytdQ3.val} = ${result}`);
+          if (annual10K !== null && ytdQ3 !== null) {
+            result = annual10K - ytdQ3;
+            log(`getValueFromTag: q4 = ${annual10K} - ${ytdQ3} = ${result}`);
           } else {
-            log(`getValueFromTag: q4 не удалось вычислить (annual10K=${!!annual10K}, ytdQ3=${!!ytdQ3})`);
+            log(`getValueFromTag: q4 не удалось вычислить (annual10K=${annual10K}, ytdQ3=${ytdQ3})`);
             result = null;
           }
         }
@@ -736,12 +723,11 @@ function getMetricValueInternal(factsData, metric, year, quarterParam, scale, ti
   }
   
   const isBalanceMetric = catalog.ttm === 'last';
-  const isQuarterRequest = quarterParam !== undefined && quarterParam !== null && quarterParam !== 'annual' && quarterParam !== 'год';
   
   log(`getMetricValueInternal: ticker=${ticker}, metric=${metric}, year=${year}, quarterParam=${quarterParam}, isBalance=${isBalanceMetric}`);
   
   // Используем унифицированную функцию поиска
-  let result = searchValueInAllTags(factsData, catalog, year, quarterParam, isBalanceMetric);
+  let result = searchValueInAllTags(factsData, catalog, year, quarterParam, isBalanceMetric, ticker);
   
   // Если не нашли и есть compute, пробуем вычислить через compute-теги
   if ((result === null || result === undefined) && catalog.compute && catalog.compute.length > 0) {
@@ -753,7 +739,7 @@ function getMetricValueInternal(factsData, metric, year, quarterParam, scale, ti
       const computeFound = findTagData(factsData, [computeTag]);
       if (!computeFound) continue;
       
-      const computeResult = getValueFromTag(computeFound.data, metric, year, quarterParam, isBalanceMetric);
+      const computeResult = getValueFromTag(computeFound.data, metric, year, quarterParam, isBalanceMetric, ticker, factsData);
       if (computeResult !== null && computeResult !== undefined) {
         if (catalog.operation === 'sum') {
           if (sum === null) sum = 0;
