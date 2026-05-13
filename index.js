@@ -561,15 +561,25 @@ function getValueFromTag(tagData, metricName, year, quarterParam, isBalanceMetri
   }
   
   // Годовой отчёт
-  if (year !== undefined && (quarterParam === undefined || quarterParam === 0 || quarterParam === 'annual' || quarterParam === 'год')) {
-    const annual = findAnnualReport(sortedValues, year);
-    if (annual) {
-      log(`getValueFromTag: найден годовой отчёт за ${year}: ${annual.val}`);
-      result = annual.val;
-    } else {
-      log(`getValueFromTag: годовой отчёт за ${year} не найден`);
+if (year !== undefined && (quarterParam === undefined || quarterParam === 0 || quarterParam === 'annual' || quarterParam === 'год')) {
+  // Ищем записи с длительностью не менее 350 дней (12 месяцев)
+  let annual = null;
+  for (const v of sortedValues) {
+    if (v.fy !== year) continue;
+    const days = (new Date(v.end) - new Date(v.start)) / (1000 * 60 * 60 * 24);
+    if (days >= 350) {
+      annual = v;
+      break;
     }
   }
+  
+  if (annual) {
+    log(`getValueFromTag: найден годовой отчёт за ${year}: ${annual.val}`);
+    result = annual.val;
+  } else {
+    log(`getValueFromTag: годовой отчёт за ${year} не найден`);
+  }
+}
   // Квартальные данные
   else if (year !== undefined && quarterParam) {
     const quarterInfo = parseQuarterString(quarterParam);
