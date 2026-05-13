@@ -12,29 +12,49 @@ const QUARTER_DAYS = {
   4: { min: 350, max: 370 }   // Q4: 12 месяцев
 };
 
+// ============ НАСТРОЙКИ КЭШЕЙ ============
+// Каждый кэш можно включить/выключить, настроить TTL и максимальный размер
+const CACHE_CONFIG = {
+  // Список всех компаний (тикер → CIK)
+  tickersCache: { enabled: true, ttl: 24 * 60 * 60 * 1000, maxSize: 1 },
+  // Быстрые контакты (тикер → CIK) для частых запросов
+  cikCache: { enabled: true, ttl: 24 * 60 * 60 * 1000, maxSize: 500 },
+  // Полные финансовые данные компании (companyfacts) - САМЫЙ ВАЖНЫЙ
+  factsCache: { enabled: true, ttl: 6 * 60 * 60 * 1000, maxSize: 20 },
+  // Результаты конкретных запросов (тикер+метрика+год+квартал → значение)
+  metricsCache: { enabled: true, ttl: 5 * 60 * 1000, maxSize: 1000 },
+  // История всех отчётов компании (submissions)
+  submissionsCache: { enabled: true, ttl: 24 * 60 * 60 * 1000, maxSize: 20 },
+  // Метаданные компании (только fiscalYearEnd, name и т.д.)
+  companyMetaCache: { enabled: true, ttl: 24 * 60 * 60 * 1000, maxSize: 500 },
+  // Перевод строки квартала в объект (q1 → {type:'quarter', num:1})
+  quarterParseCache: { enabled: true, ttl: Infinity, maxSize: 50 },
+  // Вычисление количества дней между датами (пока отключён)
+  durationCache: { enabled: false, ttl: Infinity, maxSize: 1000 },
+  // Все значения метрики из всех тегов (дублирует factsCache, отключён)
+  collectAllTagValuesCache: { enabled: false, ttl: 6 * 60 * 60 * 1000, maxSize: 50 },
+  // Значения одного конкретного тега (дублирует factsCache, отключён)
+  getMetricValuesArrayCache: { enabled: false, ttl: 6 * 60 * 60 * 1000, maxSize: 200 }
+};
+
 // ============ КОНФИГУРАЦИЯ ============
 const USER_AGENT = 'GoogleSheetsSEC contact@example.com';
 const SEC_BASE = 'https://www.sec.gov';
 const DATA_BASE = 'https://data.sec.gov';
 
-// Кэши с TTL 1 секунда для отладки (потом увеличить)
-const CACHE_TTL_DEBUG = 1 * 1000; // 1 секунда
-
+// Кэши (переменные)
 let tickersCache = null;
 let tickersCacheTime = 0;
-const TICKERS_CACHE_TTL = CACHE_TTL_DEBUG;
 
-const metricsCache = new Map();           // Кэш результатов getMetricValue
-const METRICS_CACHE_TTL = CACHE_TTL_DEBUG;
-
-const tagSearchCache = new Map();         // Кэш результатов поиска по тегам
-const TAG_SEARCH_CACHE_TTL = CACHE_TTL_DEBUG;
-
-const factsCache = new Map();             // Кэш companyfacts
-const FACTS_CACHE_TTL = CACHE_TTL_DEBUG;
-
-const submissionsCache = new Map();       // Кэш submissions
-const SUBMISSIONS_CACHE_TTL = CACHE_TTL_DEBUG;
+const cikCache = new Map();              // тикер → CIK
+const factsCache = new Map();            // CIK → companyfacts JSON
+const metricsCache = new Map();          // ключ → значение метрики
+const submissionsCache = new Map();      // CIK → submissions JSON
+const companyMetaCache = new Map();      // CIK → { fiscalYearEnd, name, category, stateOfIncorporation }
+const quarterParseCache = new Map();     // строка → объект квартала
+const durationCache = new Map();         // start|end → количество дней
+const collectAllTagValuesCache = new Map(); // ключ → массив значений
+const getMetricValuesArrayCache = new Map(); // ключ → массив значений
 
 // ============ ПОЛНЫЙ СПРАВОЧНИК МЕТРИК ============
 const METRICS_CATALOG = {
@@ -229,6 +249,51 @@ function deduplicateByKey(values, getKey) {
   return Array.from(map.values());
 }
 
+// Безопасное получение дней между датами (с кэшем)
+function getDaysDifference(start, end) {
+  if (!CACHE_CONFIG.durationCache.enabled) {
+    return (new Date(end) - new Date(start)) / (1000 * 60 * 60 * 24);
+  }
+  
+  const key = `${start}|${end}`;
+  const cached = durationCache.get(key);
+  if (cached) return cached;
+  
+  const days = (new Date(end) - new Date(start)) / (1000 * 60 * 60 * 24);
+  if (durationCache.size < CACHE_CONFIG.durationCache.maxSize) {
+    durationCache.set(key, days);
+  }
+  return days;
+}
+
+// Парсинг строки квартала с кэшем
+function parseQuarterStringCached(quarterStr) {
+  if (!quarterStr || typeof quarterStr !== 'string') return null;
+  
+  if (CACHE_CONFIG.quarterParseCache.enabled) {
+    const cached = quarterParseCache.get(quarterStr);
+    if (cached) return cached;
+  }
+  
+  const lower = quarterStr.toLowerCase().trim();
+  let result = null;
+  
+  if (lower === 'q1') result = { type: 'quarter', num: 1 };
+  else if (lower === 'q2') result = { type: 'quarter', num: 2 };
+  else if (lower === 'q3') result = { type: 'quarter', num: 3 };
+  else if (lower === 'q4') result = { type: 'quarter', num: 4 };
+  else if (lower === '1q') result = { type: 'ytd', num: 1 };
+  else if (lower === '2q') result = { type: 'ytd', num: 2 };
+  else if (lower === '3q') result = { type: 'ytd', num: 3 };
+  else if (lower === '4q') result = { type: 'ytd', num: 4 };
+  
+  if (result && CACHE_CONFIG.quarterParseCache.enabled && quarterParseCache.size < CACHE_CONFIG.quarterParseCache.maxSize) {
+    quarterParseCache.set(quarterStr, result);
+  }
+  
+  return result;
+}
+
 // ============ ПОИСК ТЕГОВ И ЗНАЧЕНИЙ ============
 
 function resolveMetric(alias) {
@@ -283,27 +348,26 @@ function buildFilingUrl(cik, accessionNumber, primaryDocument) {
   return `https://www.sec.gov/Archives/edgar/data/${cleanCik}/${cleanAcc}/`;
 }
 
-function parseQuarterString(quarterStr) {
-  if (!quarterStr || typeof quarterStr !== 'string') return null;
-  const lower = quarterStr.toLowerCase().trim();
-  
-  if (lower === 'q1') return { type: 'quarter', num: 1 };
-  if (lower === 'q2') return { type: 'quarter', num: 2 };
-  if (lower === 'q3') return { type: 'quarter', num: 3 };
-  if (lower === 'q4') return { type: 'quarter', num: 4 };
-  
-  if (lower === '1q') return { type: 'ytd', num: 1 };
-  if (lower === '2q') return { type: 'ytd', num: 2 };
-  if (lower === '3q') return { type: 'ytd', num: 3 };
-  if (lower === '4q') return { type: 'ytd', num: 4 };
-  
-  return null;
-}
-
 // ============ ФУНКЦИИ-ХЕЛПЕРЫ ДЛЯ КЭШИРОВАНИЯ ============
 
 function isCacheValid(cached, ttl) {
   return cached && (Date.now() - cached.time < ttl);
+}
+
+function getFromCache(map, key, ttl) {
+  if (!map.has(key)) return null;
+  const cached = map.get(key);
+  if (isCacheValid(cached, ttl)) return cached.data;
+  map.delete(key);
+  return null;
+}
+
+function setToCache(map, key, data, ttl, maxSize) {
+  if (map.size >= maxSize) {
+    const oldest = map.keys().next().value;
+    map.delete(oldest);
+  }
+  map.set(key, { data, time: Date.now() });
 }
 
 // ============ ЕДИНЫЙ ПОИСК ПО ТАКСОНОМИЯМ ============
@@ -333,6 +397,7 @@ function findTagData(factsData, tags) {
 // ============ ФУНКЦИИ ДЛЯ РАБОТЫ С МЕТРИКАМИ ============
 
 function getMetricValuesArray(factsData, tagOrAlias) {
+  // Кэширование для этого метода отключено (CACHE_CONFIG.getMetricValuesArrayCache.enabled = false)
   const catalog = METRICS_CATALOG[tagOrAlias];
   const facts = factsData?.facts;
   if (!facts) {
@@ -371,8 +436,9 @@ function getMetricValuesArray(factsData, tagOrAlias) {
   return units[unitKey] || null;
 }
 
-// Сбор значений из всех тегов (для TTM)
+// Сбор значений из всех тегов (для TTM) - кэш отключён
 function collectAllTagValues(factsData, tags) {
+  // Кэш для этого метода отключён (CACHE_CONFIG.collectAllTagValuesCache.enabled = false)
   log(`collectAllTagValues: начинаем сбор для тегов [${tags.join(', ')}]`);
   const allValues = [];
   
@@ -404,7 +470,7 @@ function collectAllTagValues(factsData, tags) {
   return result;
 }
 
-// Сбор значений метрики (прямые теги + compute)
+// Сбор значений метрики (прямые теги + compute) - кэш отключён
 function collectMetricValues(factsData, metricName) {
   const catalog = METRICS_CATALOG[metricName];
   if (!catalog) {
@@ -471,7 +537,7 @@ function searchValueInAllTags(factsData, catalog, year, quarterParam, isBalanceM
     
     // Если запрошен квартал (но не q4), проверяем наличие данных за этот квартал
     if (isQuarterRequest && quarterParam !== 'q4') {
-      const quarterInfo = parseQuarterString(quarterParam);
+      const quarterInfo = parseQuarterStringCached(quarterParam);
       if (quarterInfo) {
         const targetFp = `Q${quarterInfo.num}`;
         const hasQuarterData = values.some(v => v.fy === year && v.fp === targetFp);
@@ -566,7 +632,7 @@ function getValueFromTag(tagData, metricName, year, quarterParam, isBalanceMetri
     let annual = null;
     for (const v of sortedValues) {
       if (v.fy !== year) continue;
-      const days = (new Date(v.end) - new Date(v.start)) / (1000 * 60 * 60 * 24);
+      const days = getDaysDifference(v.start, v.end);
       if (days >= QUARTER_DAYS[4].min && days <= QUARTER_DAYS[4].max) {
         annual = v;
         break;
@@ -583,7 +649,7 @@ function getValueFromTag(tagData, metricName, year, quarterParam, isBalanceMetri
   
   // Квартальные данные
   else if (year !== undefined && quarterParam) {
-    const quarterInfo = parseQuarterString(quarterParam);
+    const quarterInfo = parseQuarterStringCached(quarterParam);
     if (!quarterInfo) {
       log(`getValueFromTag: не удалось распарсить quarterParam=${quarterParam}`);
       return null;
@@ -641,14 +707,14 @@ function getValueFromTag(tagData, metricName, year, quarterParam, isBalanceMetri
           
           // Ищем запись за 3 месяца (80-100 дней)
           let quarterValue = candidates.find(v => {
-            const days = (new Date(v.end) - new Date(v.start)) / (1000 * 60 * 60 * 24);
+            const days = getDaysDifference(v.start, v.end);
             return days >= QUARTER_DAYS[1].min && days <= QUARTER_DAYS[1].max;
           });
           
           // Для q2, q3: если нет 3-месячной записи, вычисляем через YTD
           if (!quarterValue && (quarterInfo.num === 2 || quarterInfo.num === 3)) {
             const ytdCurrent = candidates.find(v => {
-              const days = (new Date(v.end) - new Date(v.start)) / (1000 * 60 * 60 * 24);
+              const days = getDaysDifference(v.start, v.end);
               return days >= QUARTER_DAYS[quarterInfo.num].min && days <= QUARTER_DAYS[quarterInfo.num].max;
             });
             const prevFp = `Q${quarterInfo.num - 1}`;
@@ -682,7 +748,7 @@ function getValueFromTag(tagData, metricName, year, quarterParam, isBalanceMetri
               if (candidates.length > 0) break;
             }
             ytdValue = candidates.find(v => {
-              const days = (new Date(v.end) - new Date(v.start)) / (1000 * 60 * 60 * 24);
+              const days = getDaysDifference(v.start, v.end);
               return days >= QUARTER_DAYS[1].min && days <= QUARTER_DAYS[1].max;
             });
           } else {
@@ -698,7 +764,7 @@ function getValueFromTag(tagData, metricName, year, quarterParam, isBalanceMetri
             }
             
             ytdValue = candidates.find(v => {
-              const days = (new Date(v.end) - new Date(v.start)) / (1000 * 60 * 60 * 24);
+              const days = getDaysDifference(v.start, v.end);
               return days >= QUARTER_DAYS[quarterInfo.num].min && days <= QUARTER_DAYS[quarterInfo.num].max;
             });
           }
@@ -866,14 +932,12 @@ function getTTMValue(factsData, metricName, scale, ticker) {
 function getMetricValue(factsData, metric, year, quarterParam, scale, ticker) {
   const cacheKey = `${ticker}:${metric}:${year}:${quarterParam}`;
   
-  if (metricsCache.has(cacheKey)) {
-    const cached = metricsCache.get(cacheKey);
-    if (isCacheValid(cached, METRICS_CACHE_TTL)) {
-      log(`getMetricValue: кэш HIT для ${cacheKey}, значение = ${cached.value}`);
-      return cached.value !== null ? applyScale(cached.value, scale) : null;
+  if (CACHE_CONFIG.metricsCache.enabled) {
+    const cached = getFromCache(metricsCache, cacheKey, CACHE_CONFIG.metricsCache.ttl);
+    if (cached !== null) {
+      log(`getMetricValue: кэш HIT для ${cacheKey}, значение = ${cached}`);
+      return cached !== null ? applyScale(cached, scale) : null;
     }
-    log(`getMetricValue: кэш EXPIRED для ${cacheKey}`);
-  } else {
     log(`getMetricValue: кэш MISS для ${cacheKey}`);
   }
   
@@ -886,7 +950,10 @@ function getMetricValue(factsData, metric, year, quarterParam, scale, ticker) {
     value = getMetricValueInternal(factsData, metric, year, quarterParam, scale, ticker);
   }
   
-  metricsCache.set(cacheKey, { value: value !== null ? value : null, time: Date.now() });
+  if (CACHE_CONFIG.metricsCache.enabled && value !== null) {
+    setToCache(metricsCache, cacheKey, value, CACHE_CONFIG.metricsCache.ttl, CACHE_CONFIG.metricsCache.maxSize);
+  }
+  
   log(`getMetricValue: результат = ${value}`);
   return value !== null ? applyScale(value, scale) : null;
 }
@@ -922,10 +989,21 @@ async function fetchWithRetry(url, options, maxRetries = 3) {
 async function getCIK(ticker) {
   log(`getCIK: поиск CIK для тикера ${ticker}`);
   
-  if (tickersCache && isCacheValid({ time: tickersCacheTime }, TICKERS_CACHE_TTL)) {
-    log(`getCIK: кэш HIT для тикеров`);
+  // Проверяем cikCache
+  if (CACHE_CONFIG.cikCache.enabled) {
+    const cached = getFromCache(cikCache, ticker, CACHE_CONFIG.cikCache.ttl);
+    if (cached !== null) {
+      log(`getCIK: кэш HIT для ${ticker} -> ${cached}`);
+      return cached;
+    }
+  }
+  
+  // Проверяем tickersCache
+  let cik = null;
+  if (tickersCache && isCacheValid({ time: tickersCacheTime }, CACHE_CONFIG.tickersCache.ttl)) {
+    log(`getCIK: tickersCache HIT`);
   } else {
-    log(`getCIK: кэш MISS для тикеров, загружаем company_tickers.json`);
+    log(`getCIK: tickersCache MISS, загружаем company_tickers.json`);
     const response = await fetchWithRetry(`${SEC_BASE}/files/company_tickers.json`, {
       headers: { 'User-Agent': USER_AGENT }
     });
@@ -940,23 +1018,55 @@ async function getCIK(ticker) {
     return null;
   }
   
-  const cik = entry.cik_str.toString().padStart(10, '0');
+  cik = entry.cik_str.toString().padStart(10, '0');
   log(`getCIK: найден CIK = ${cik}`);
+  
+  if (CACHE_CONFIG.cikCache.enabled && cik) {
+    setToCache(cikCache, ticker, cik, CACHE_CONFIG.cikCache.ttl, CACHE_CONFIG.cikCache.maxSize);
+  }
+  
   return cik;
 }
 
-async function getSubmissions(cik) {
-  const cacheKey = `submissions_${cik}`;
+async function getCompanyMeta(cik, ticker) {
+  log(`getCompanyMeta: получение метаданных для CIK ${cik}`);
   
-  if (submissionsCache.has(cacheKey)) {
-    const cached = submissionsCache.get(cacheKey);
-    if (isCacheValid(cached, SUBMISSIONS_CACHE_TTL)) {
-      log(`getSubmissions: кэш HIT для ${cik}`);
-      return cached.data;
+  if (CACHE_CONFIG.companyMetaCache.enabled) {
+    const cached = getFromCache(companyMetaCache, cik, CACHE_CONFIG.companyMetaCache.ttl);
+    if (cached !== null) {
+      log(`getCompanyMeta: кэш HIT для ${cik}`);
+      return cached;
     }
-    log(`getSubmissions: кэш EXPIRED для ${cik}`);
-  } else {
-    log(`getSubmissions: кэш MISS для ${cik}`);
+  }
+  
+  const subData = await getSubmissions(cik);
+  if (!subData) return null;
+  
+  const meta = {
+    fiscalYearEnd: subData.fiscalYearEnd || null,
+    name: subData.entityName || null,
+    category: subData.category || null,
+    stateOfIncorporation: subData.stateOfIncorporation || null,
+    ticker: ticker
+  };
+  
+  if (CACHE_CONFIG.companyMetaCache.enabled) {
+    setToCache(companyMetaCache, cik, meta, CACHE_CONFIG.companyMetaCache.ttl, CACHE_CONFIG.companyMetaCache.maxSize);
+  }
+  
+  return meta;
+}
+
+async function getSubmissions(cik) {
+  log(`getSubmissions: загрузка submissions для CIK ${cik}`);
+  
+  if (CACHE_CONFIG.submissionsCache.enabled) {
+    const cached = getFromCache(submissionsCache, cik, CACHE_CONFIG.submissionsCache.ttl);
+    if (cached !== null) {
+      log(`getSubmissions: кэш HIT для ${cik}`);
+      return cached;
+    }
+    log(`getSubmissions: кэш EXPIRED или MISS для ${cik}`);
   }
   
   const url = `${DATA_BASE}/submissions/CIK${cik}.json`;
@@ -969,23 +1079,25 @@ async function getSubmissions(cik) {
   }
   
   const data = await response.json();
-  submissionsCache.set(cacheKey, { data, time: Date.now() });
+  
+  if (CACHE_CONFIG.submissionsCache.enabled) {
+    setToCache(submissionsCache, cik, data, CACHE_CONFIG.submissionsCache.ttl, CACHE_CONFIG.submissionsCache.maxSize);
+  }
+  
   log(`getSubmissions: загружено и закэшировано`);
   return data;
 }
 
 async function getCompanyFacts(cik) {
-  const cacheKey = `facts_${cik}`;
+  log(`getCompanyFacts: загрузка companyfacts для CIK ${cik}`);
   
-  if (factsCache.has(cacheKey)) {
-    const cached = factsCache.get(cacheKey);
-    if (isCacheValid(cached, FACTS_CACHE_TTL)) {
+  if (CACHE_CONFIG.factsCache.enabled) {
+    const cached = getFromCache(factsCache, cik, CACHE_CONFIG.factsCache.ttl);
+    if (cached !== null) {
       log(`getCompanyFacts: кэш HIT для ${cik}`);
-      return cached.data;
+      return cached;
     }
-    log(`getCompanyFacts: кэш EXPIRED для ${cik}`);
-  } else {
-    log(`getCompanyFacts: кэш MISS для ${cik}`);
+    log(`getCompanyFacts: кэш EXPIRED или MISS для ${cik}`);
   }
   
   const url = `${DATA_BASE}/api/xbrl/companyfacts/CIK${cik}.json`;
@@ -998,7 +1110,11 @@ async function getCompanyFacts(cik) {
   }
   
   const data = await response.json();
-  factsCache.set(cacheKey, { data, time: Date.now() });
+  
+  if (CACHE_CONFIG.factsCache.enabled) {
+    setToCache(factsCache, cik, data, CACHE_CONFIG.factsCache.ttl, CACHE_CONFIG.factsCache.maxSize);
+  }
+  
   log(`getCompanyFacts: загружено и закэшировано`);
   return data;
 }
@@ -1399,5 +1515,5 @@ app.listen(PORT, () => {
   console.log(`  GET /companyfacts/:ticker`);
   console.log(`  GET /company-tickers`);
   console.log(`  GET /ping`);
-  console.log(`Кэш TTL установлен на ${CACHE_TTL_DEBUG / 1000} секунд для отладки`);
+  console.log(`Кэш TTL: tickers=24ч, cik=24ч, facts=6ч, metrics=5мин, submissions=24ч, companyMeta=24ч, quarterParse=∞`);
 });
