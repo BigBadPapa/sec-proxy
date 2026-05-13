@@ -536,7 +536,7 @@ function searchValueInAllTags(factsData, catalog, year, quarterParam, isBalanceM
     }
     
     // Если запрошен квартал (но не q4), проверяем наличие данных за этот квартал
-    if (isQuarterRequest && quarterParam !== 'q4') {
+    if (isQuarterRequest && quarterParam !== 'q4' && quarterParam !== '4q') {
       const quarterInfo = parseQuarterStringCached(quarterParam);
       if (quarterInfo) {
         const targetFp = `Q${quarterInfo.num}`;
