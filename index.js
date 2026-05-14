@@ -631,7 +631,6 @@ function getValueFromTag(tagData, metricName, year, quarterParam, isBalanceMetri
     sortedValues = sortByStartDesc(values);
   }
   
-
   // Годовой отчёт
   if (year !== undefined && (quarterParam === undefined || quarterParam === 0 || quarterParam === 'annual' || quarterParam === 'год' || quarterParam === '4q')) {
     // Ищем записи с длительностью для Q4 (12 месяцев = 350-370 дней)
@@ -652,7 +651,6 @@ function getValueFromTag(tagData, metricName, year, quarterParam, isBalanceMetri
       log(`getValueFromTag: годовой отчёт за ${year} не найден`);
     }
   }
-  
   // Квартальные данные
   else if (year !== undefined && quarterParam) {
     const quarterInfo = parseQuarterStringCached(quarterParam);
@@ -672,14 +670,69 @@ function getValueFromTag(tagData, metricName, year, quarterParam, isBalanceMetri
         result = balanceValue?.val || null;
         log(`getValueFromTag: баланс ${targetFp}: ${result}`);
       }
-    }
-     
+    } else {
       // Q1, Q2, Q3
-      else {
-        const targetFp = `Q${quarterInfo.num}`;
+      const targetFp = `Q${quarterInfo.num}`;
+      
+      if (quarterInfo.type === 'quarter') {
+        // q1, q2, q3: ищем 10-Q или 6-K
+        const formsToTry = ['10-Q', '6-K'];
+        let candidates = [];
+        for (const form of formsToTry) {
+          candidates = sortedValues.filter(v => 
+            v.form === form && 
+            v.fy === year && 
+            v.fp === targetFp
+          );
+          if (candidates.length > 0) break;
+        }
         
-        if (quarterInfo.type === 'quarter') {
-          // q1, q2, q3: ищем 10-Q или 6-K
+        // Ищем запись за 3 месяца (80-100 дней)
+        let quarterValue = candidates.find(v => {
+          const days = getDaysDifference(v.start, v.end);
+          return days >= QUARTER_DAYS[1].min && days <= QUARTER_DAYS[1].max;
+        });
+        
+        // Для q2, q3: если нет 3-месячной записи, вычисляем через YTD
+        if (!quarterValue && (quarterInfo.num === 2 || quarterInfo.num === 3)) {
+          const ytdCurrent = candidates.find(v => {
+            const days = getDaysDifference(v.start, v.end);
+            return days >= QUARTER_DAYS[quarterInfo.num].min && days <= QUARTER_DAYS[quarterInfo.num].max;
+          });
+          const prevFp = `Q${quarterInfo.num - 1}`;
+          const ytdPrev = findQuarterlyReport(sortedValues, year, prevFp);
+          
+          if (ytdCurrent && ytdPrev) {
+            quarterValue = { val: ytdCurrent.val - ytdPrev.val };
+            log(`getValueFromTag: вычислен ${targetFp} через YTD: ${ytdCurrent.val} - ${ytdPrev.val} = ${quarterValue.val}`);
+          } else if (ytdCurrent) {
+            quarterValue = ytdCurrent;
+            log(`getValueFromTag: взят YTD ${targetFp} как есть: ${quarterValue.val}`);
+          }
+        }
+        
+        result = quarterValue?.val || null;
+        log(`getValueFromTag: ${quarterParam} -> ${result}`);
+      } else if (quarterInfo.type === 'ytd') {
+        // 1q, 2q, 3q: YTD
+        let ytdValue = null;
+        
+        if (quarterInfo.num === 1) {
+          const formsToTry = ['10-Q', '6-K'];
+          let candidates = [];
+          for (const form of formsToTry) {
+            candidates = sortedValues.filter(v => 
+              v.form === form && 
+              v.fy === year && 
+              v.fp === targetFp
+            );
+            if (candidates.length > 0) break;
+          }
+          ytdValue = candidates.find(v => {
+            const days = getDaysDifference(v.start, v.end);
+            return days >= QUARTER_DAYS[1].min && days <= QUARTER_DAYS[1].max;
+          });
+        } else {
           const formsToTry = ['10-Q', '6-K'];
           let candidates = [];
           for (const form of formsToTry) {
@@ -691,73 +744,14 @@ function getValueFromTag(tagData, metricName, year, quarterParam, isBalanceMetri
             if (candidates.length > 0) break;
           }
           
-          // Ищем запись за 3 месяца (80-100 дней)
-          let quarterValue = candidates.find(v => {
+          ytdValue = candidates.find(v => {
             const days = getDaysDifference(v.start, v.end);
-            return days >= QUARTER_DAYS[1].min && days <= QUARTER_DAYS[1].max;
+            return days >= QUARTER_DAYS[quarterInfo.num].min && days <= QUARTER_DAYS[quarterInfo.num].max;
           });
-          
-          // Для q2, q3: если нет 3-месячной записи, вычисляем через YTD
-          if (!quarterValue && (quarterInfo.num === 2 || quarterInfo.num === 3)) {
-            const ytdCurrent = candidates.find(v => {
-              const days = getDaysDifference(v.start, v.end);
-              return days >= QUARTER_DAYS[quarterInfo.num].min && days <= QUARTER_DAYS[quarterInfo.num].max;
-            });
-            const prevFp = `Q${quarterInfo.num - 1}`;
-            const ytdPrev = findQuarterlyReport(sortedValues, year, prevFp);
-            
-            if (ytdCurrent && ytdPrev) {
-              quarterValue = { val: ytdCurrent.val - ytdPrev.val };
-              log(`getValueFromTag: вычислен ${targetFp} через YTD: ${ytdCurrent.val} - ${ytdPrev.val} = ${quarterValue.val}`);
-            } else if (ytdCurrent) {
-              quarterValue = ytdCurrent;
-              log(`getValueFromTag: взят YTD ${targetFp} как есть: ${quarterValue.val}`);
-            }
-          }
-          
-          result = quarterValue?.val || null;
-          log(`getValueFromTag: ${quarterParam} -> ${result}`);
         }
-        else if (quarterInfo.type === 'ytd') {
-          // 1q, 2q, 3q: YTD
-          let ytdValue = null;
-          
-          if (quarterInfo.num === 1) {
-            const formsToTry = ['10-Q', '6-K'];
-            let candidates = [];
-            for (const form of formsToTry) {
-              candidates = sortedValues.filter(v => 
-                v.form === form && 
-                v.fy === year && 
-                v.fp === targetFp
-              );
-              if (candidates.length > 0) break;
-            }
-            ytdValue = candidates.find(v => {
-              const days = getDaysDifference(v.start, v.end);
-              return days >= QUARTER_DAYS[1].min && days <= QUARTER_DAYS[1].max;
-            });
-          } else {
-            const formsToTry = ['10-Q', '6-K'];
-            let candidates = [];
-            for (const form of formsToTry) {
-              candidates = sortedValues.filter(v => 
-                v.form === form && 
-                v.fy === year && 
-                v.fp === targetFp
-              );
-              if (candidates.length > 0) break;
-            }
-            
-            ytdValue = candidates.find(v => {
-              const days = getDaysDifference(v.start, v.end);
-              return days >= QUARTER_DAYS[quarterInfo.num].min && days <= QUARTER_DAYS[quarterInfo.num].max;
-            });
-          }
-          
-          result = ytdValue?.val || null;
-          log(`getValueFromTag: ${quarterParam} (YTD) -> ${result}`);
-        }
+        
+        result = ytdValue?.val || null;
+        log(`getValueFromTag: ${quarterParam} (YTD) -> ${result}`);
       }
     }
   }
