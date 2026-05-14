@@ -772,6 +772,11 @@ function getMetricValueInternal(factsData, metric, year, quarterParam, scale, ti
     return null;
   }
   
+  // 4q сразу отправляем в годовой отчёт (превращаем в undefined)
+  if (quarterParam === '4q') {
+    quarterParam = undefined;
+  }
+  
   const isBalanceMetric = catalog.ttm === 'last';
   
   log(`getMetricValueInternal: ticker=${ticker}, metric=${metric}, year=${year}, quarterParam=${quarterParam}, isBalance=${isBalanceMetric}`);
