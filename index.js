@@ -511,8 +511,8 @@ function searchValueInAllTags(factsData, catalog, year, quarterParam, isBalanceM
   const isQuarterRequest = quarterParam !== undefined && quarterParam !== null && quarterParam !== 'annual' && quarterParam !== 'год';
   
   log(`searchValueInAllTags: start, year=${year}, quarterParam=${quarterParam}, isBalance=${isBalanceMetric}`);
-
-    // 4q и q4 не обрабатываем через compute
+  
+  // 4q и q4 не обрабатываем через compute и прямые теги
   if (quarterParam === '4q' || quarterParam === 'q4') {
     log(`searchValueInAllTags: пропускаем ${quarterParam}`);
     return null;
@@ -631,6 +631,7 @@ function getValueFromTag(tagData, metricName, year, quarterParam, isBalanceMetri
     sortedValues = sortByStartDesc(values);
   }
   
+
   // Годовой отчёт
   if (year !== undefined && (quarterParam === undefined || quarterParam === 0 || quarterParam === 'annual' || quarterParam === 'год' || quarterParam === '4q')) {
     // Ищем записи с длительностью для Q4 (12 месяцев = 350-370 дней)
@@ -651,6 +652,7 @@ function getValueFromTag(tagData, metricName, year, quarterParam, isBalanceMetri
       log(`getValueFromTag: годовой отчёт за ${year} не найден`);
     }
   }
+  
   // Квартальные данные
   else if (year !== undefined && quarterParam) {
     const quarterInfo = parseQuarterStringCached(quarterParam);
@@ -670,8 +672,9 @@ function getValueFromTag(tagData, metricName, year, quarterParam, isBalanceMetri
         result = balanceValue?.val || null;
         log(`getValueFromTag: баланс ${targetFp}: ${result}`);
       }
-    } else {
-      // Q1, Q2, Q3
+    }
+    else {
+      // Q1, Q2, Q3 (блок Q4 удалён)
       const targetFp = `Q${quarterInfo.num}`;
       
       if (quarterInfo.type === 'quarter') {
@@ -713,7 +716,8 @@ function getValueFromTag(tagData, metricName, year, quarterParam, isBalanceMetri
         
         result = quarterValue?.val || null;
         log(`getValueFromTag: ${quarterParam} -> ${result}`);
-      } else if (quarterInfo.type === 'ytd') {
+      }
+      else if (quarterInfo.type === 'ytd') {
         // 1q, 2q, 3q: YTD
         let ytdValue = null;
         
@@ -771,14 +775,14 @@ function getMetricValueInternal(factsData, metric, year, quarterParam, scale, ti
   const isBalanceMetric = catalog.ttm === 'last';
   
   log(`getMetricValueInternal: ticker=${ticker}, metric=${metric}, year=${year}, quarterParam=${quarterParam}, isBalance=${isBalanceMetric}`);
-
+  
   // q4 = 4q − 3q
-if (quarterParam === 'q4') {
-  const annual = getMetricValueInternal(factsData, metric, year, '4q', null, ticker);
-  const ytdQ3 = getMetricValueInternal(factsData, metric, year, '3q', null, ticker);
-  const result = (annual !== null && ytdQ3 !== null) ? annual - ytdQ3 : null;
-  return result !== null ? applyScale(result, scale) : null;
-}
+  if (quarterParam === 'q4') {
+    const annual = getMetricValueInternal(factsData, metric, year, '4q', null, ticker);
+    const ytdQ3 = getMetricValueInternal(factsData, metric, year, '3q', null, ticker);
+    const result = (annual !== null && ytdQ3 !== null) ? annual - ytdQ3 : null;
+    return result !== null ? applyScale(result, scale) : null;
+  }
   
   // Используем унифицированную функцию поиска
   let result = searchValueInAllTags(factsData, catalog, year, quarterParam, isBalanceMetric, ticker);
