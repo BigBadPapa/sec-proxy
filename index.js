@@ -59,7 +59,7 @@ const getMetricValuesArrayCache = new Map(); // ключ → массив зна
 // ============ ПОЛНЫЙ СПРАВОЧНИК МЕТРИК ============
 const METRICS_CATALOG = {
   // P&L
-  revenue: { tags: ['Revenues', 'RevenueFromContractWithCustomerExcludingAssessedTax', 'RevenueFromContractWithCustomerIncludingAssessedTax', 'RevenuesNetOfInterestExpense', 'RegulatedAndUnregulatedOperatingRevenue', 'GrossInvestmentIncomeOperating'], compute: ['InterestIncomeExpenseNet', 'NoninterestIncome'], operation: 'sum', category: 'P&L', ttm: 'sum', ru: 'Выручка' },
+  revenue: { tags: ['Revenues', 'RevenueFromContractWithCustomerExcludingAssessedTax', 'RevenueFromContractWithCustomerIncludingAssessedTax', 'RevenuesNetOfInterestExpense', 'RegulatedAndUnregulatedOperatingRevenue', 'RegulatedOperatingRevenue', 'GrossInvestmentIncomeOperating'], compute: ['InterestIncomeExpenseNet', 'NoninterestIncome'], operation: 'sum', category: 'P&L', ttm: 'sum', ru: 'Выручка' },
   cogs: { tags: ['CostOfGoodsAndServicesSold', 'CostOfRevenue', 'CostOfSales', 'CostsAndExpenses', 'CostOfServices'], category: 'P&L', ttm: 'sum', ru: 'Себестоимость' },
   grossprofit: { tags: ['GrossProfit'], category: 'P&L', ttm: 'sum', ru: 'Валовая прибыль' },
   rd: { tags: ['ResearchAndDevelopmentExpense', 'ResearchAndDevelopmentExpenseExcludingAcquiredInProcessResearchAndDevelopment'], category: 'P&L', ttm: 'sum', ru: 'R&D расходы' },
