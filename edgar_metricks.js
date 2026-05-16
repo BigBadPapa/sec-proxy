@@ -1,7 +1,6 @@
 const express = require('express');
+const router = express.Router();
 const fetch = require('node-fetch');
-
-const app = express();
 
 // ============ КОНСТАНТЫ ============
 // Константы для длительности кварталов (в днях)
@@ -13,27 +12,16 @@ const QUARTER_DAYS = {
 };
 
 // ============ НАСТРОЙКИ КЭШЕЙ ============
-// Каждый кэш можно включить/выключить, настроить TTL и максимальный размер
 const CACHE_CONFIG = {
-  // Список всех компаний (тикер → CIK)
-  tickersCache: { enabled: true, ttl: 24 * 60 * 60 * 1000, maxSize: 1 }, //24 часа
-  // Быстрые контакты (тикер → CIK) для частых запросов
+  tickersCache: { enabled: true, ttl: 24 * 60 * 60 * 1000, maxSize: 1 },
   cikCache: { enabled: true, ttl: 24 * 60 * 60 * 1000, maxSize: 500 },
-  // Полные финансовые данные компании (companyfacts) - САМЫЙ ВАЖНЫЙ
   factsCache: { enabled: true, ttl: 6 * 60 * 60 * 1000, maxSize: 20 },
-  // Результаты конкретных запросов (тикер+метрика+год+квартал → значение)
   metricsCache: { enabled: true, ttl: 5 * 60 * 1000, maxSize: 1000 },
-  // История всех отчётов компании (submissions)
   submissionsCache: { enabled: true, ttl: 24 * 60 * 60 * 1000, maxSize: 20 },
-  // Метаданные компании (только fiscalYearEnd, name и т.д.)
   companyMetaCache: { enabled: true, ttl: 24 * 60 * 60 * 1000, maxSize: 500 },
-  // Перевод строки квартала в объект (q1 → {type:'quarter', num:1})
   quarterParseCache: { enabled: true, ttl: Infinity, maxSize: 50 },
-  // Вычисление количества дней между датами (пока отключён)
   durationCache: { enabled: false, ttl: Infinity, maxSize: 1000 },
-  // Все значения метрики из всех тегов (дублирует factsCache, отключён)
   collectAllTagValuesCache: { enabled: false, ttl: 6 * 60 * 60 * 1000, maxSize: 50 },
-  // Значения одного конкретного тега (дублирует factsCache, отключён)
   getMetricValuesArrayCache: { enabled: false, ttl: 6 * 60 * 60 * 1000, maxSize: 200 }
 };
 
@@ -46,15 +34,15 @@ const DATA_BASE = 'https://data.sec.gov';
 let tickersCache = null;
 let tickersCacheTime = 0;
 
-const cikCache = new Map();              // тикер → CIK
-const factsCache = new Map();            // CIK → companyfacts JSON
-const metricsCache = new Map();          // ключ → значение метрики
-const submissionsCache = new Map();      // CIK → submissions JSON
-const companyMetaCache = new Map();      // CIK → { fiscalYearEnd, name, category, stateOfIncorporation }
-const quarterParseCache = new Map();     // строка → объект квартала
-const durationCache = new Map();         // start|end → количество дней
-const collectAllTagValuesCache = new Map(); // ключ → массив значений
-const getMetricValuesArrayCache = new Map(); // ключ → массив значений
+const cikCache = new Map();
+const factsCache = new Map();
+const metricsCache = new Map();
+const submissionsCache = new Map();
+const companyMetaCache = new Map();
+const quarterParseCache = new Map();
+const durationCache = new Map();
+const collectAllTagValuesCache = new Map();
+const getMetricValuesArrayCache = new Map();
 
 // ============ ПОЛНЫЙ СПРАВОЧНИК МЕТРИК ============
 const METRICS_CATALOG = {
@@ -237,7 +225,6 @@ function findQuarterlyReport(values, year, fp, forms = ['10-Q', '6-K']) {
   return null;
 }
 
-// Дедупликация записей по ключу (выбираем запись с самой свежей filed)
 function deduplicateByKey(values, getKey) {
   const map = new Map();
   for (const v of values) {
@@ -250,7 +237,6 @@ function deduplicateByKey(values, getKey) {
   return Array.from(map.values());
 }
 
-// Безопасное получение дней между датами (с кэшем)
 function getDaysDifference(start, end) {
   if (!CACHE_CONFIG.durationCache.enabled) {
     return (new Date(end) - new Date(start)) / (1000 * 60 * 60 * 24);
@@ -267,7 +253,6 @@ function getDaysDifference(start, end) {
   return days;
 }
 
-// Парсинг строки квартала с кэшем
 function parseQuarterStringCached(quarterStr) {
   if (!quarterStr || typeof quarterStr !== 'string') return null;
   
@@ -294,8 +279,6 @@ function parseQuarterStringCached(quarterStr) {
   
   return result;
 }
-
-// ============ ПОИСК ТЕГОВ И ЗНАЧЕНИЙ ============
 
 function resolveMetric(alias) {
   const normalized = alias.toString().trim().toLowerCase().replace(/[\s_-]/g, '');
@@ -398,7 +381,6 @@ function findTagData(factsData, tags) {
 // ============ ФУНКЦИИ ДЛЯ РАБОТЫ С МЕТРИКАМИ ============
 
 function getMetricValuesArray(factsData, tagOrAlias) {
-  // Кэширование для этого метода отключено (CACHE_CONFIG.getMetricValuesArrayCache.enabled = false)
   const catalog = METRICS_CATALOG[tagOrAlias];
   const facts = factsData?.facts;
   if (!facts) {
@@ -437,9 +419,7 @@ function getMetricValuesArray(factsData, tagOrAlias) {
   return units[unitKey] || null;
 }
 
-// Сбор значений из всех тегов (для TTM) - кэш отключён
 function collectAllTagValues(factsData, tags) {
-  // Кэш для этого метода отключён (CACHE_CONFIG.collectAllTagValuesCache.enabled = false)
   log(`collectAllTagValues: начинаем сбор для тегов [${tags.join(', ')}]`);
   const allValues = [];
   
@@ -456,7 +436,6 @@ function collectAllTagValues(factsData, tags) {
     }
   }
   
-  // Дедупликация по периоду (берём запись с самой свежей датой подачи)
   const unique = new Map();
   for (const v of allValues) {
     const key = `${v.fy || ''}|${v.fp || ''}|${v.form || ''}|${v.end || ''}|${v.start || ''}|${v.filed || ''}`;
@@ -471,7 +450,6 @@ function collectAllTagValues(factsData, tags) {
   return result;
 }
 
-// Сбор значений метрики (прямые теги + compute) - кэш отключён
 function collectMetricValues(factsData, metricName) {
   const catalog = METRICS_CATALOG[metricName];
   if (!catalog) {
@@ -506,20 +484,17 @@ function collectMetricValues(factsData, metricName) {
   return values;
 }
 
-// Новая унифицированная функция поиска значения по всем тегам
 function searchValueInAllTags(factsData, catalog, year, quarterParam, isBalanceMetric, ticker) {
   const tags = catalog.tags;
   const isQuarterRequest = quarterParam !== undefined && quarterParam !== null && quarterParam !== 'annual' && quarterParam !== 'год';
   
   log(`searchValueInAllTags: start, year=${year}, quarterParam=${quarterParam}, isBalance=${isBalanceMetric}`);
   
-  // 4q и q4 не обрабатываем через compute и прямые теги
   if (quarterParam === '4q' || quarterParam === 'q4') {
     log(`searchValueInAllTags: пропускаем ${quarterParam}`);
     return null;
   }
   
-  // 1. Перебираем все прямые теги в порядке приоритета
   for (const tag of tags) {
     log(`searchValueInAllTags: проверяем тег ${tag}`);
     
@@ -535,14 +510,12 @@ function searchValueInAllTags(factsData, catalog, year, quarterParam, isBalanceM
       continue;
     }
     
-    // Проверяем, есть ли в этом теге данные за запрошенный год
     const hasYearData = values.some(v => v.fy === year);
     if (!hasYearData) {
       log(`searchValueInAllTags: тег ${tag} не содержит данных за год ${year}`);
       continue;
     }
     
-    // Если запрошен квартал (но не q4), проверяем наличие данных за этот квартал
     if (isQuarterRequest && quarterParam !== 'q4' && quarterParam !== '4q') {
       const quarterInfo = parseQuarterStringCached(quarterParam);
       if (quarterInfo) {
@@ -555,7 +528,6 @@ function searchValueInAllTags(factsData, catalog, year, quarterParam, isBalanceM
       }
     }
     
-    // Если дошли сюда — в теге есть нужные данные, пытаемся получить значение
     const result = getValueFromTag(tagData.data, catalog.alias || Object.keys(METRICS_CATALOG).find(k => METRICS_CATALOG[k] === catalog), year, quarterParam, isBalanceMetric, ticker, factsData);
     if (result !== null && result !== undefined) {
       log(`searchValueInAllTags: найден результат в теге ${tag}: ${result}`);
@@ -563,7 +535,6 @@ function searchValueInAllTags(factsData, catalog, year, quarterParam, isBalanceM
     }
   }
   
-  // 2. Если не нашли ни в одном прямом теге — переходим к compute-тегам
   if (catalog.compute && catalog.compute.length > 0) {
     log(`searchValueInAllTags: переходим к compute-тегам`);
     let sum = null;
@@ -602,8 +573,6 @@ function searchValueInAllTags(factsData, catalog, year, quarterParam, isBalanceM
   return null;
 }
 
-// ============ ОСНОВНАЯ ЛОГИКА ПОИСКА ЗНАЧЕНИЯ ИЗ ТЕГА ============
-
 function getValueFromTag(tagData, metricName, year, quarterParam, isBalanceMetric, ticker, factsData) {
   const catalog = METRICS_CATALOG[metricName];
   if (!catalog) {
@@ -624,7 +593,6 @@ function getValueFromTag(tagData, metricName, year, quarterParam, isBalanceMetri
   
   let result = null;
   
-  // Сортировка
   let sortedValues;
   if (isBalanceMetric) {
     sortedValues = sortByEndDesc(values);
@@ -632,10 +600,7 @@ function getValueFromTag(tagData, metricName, year, quarterParam, isBalanceMetri
     sortedValues = sortByStartDesc(values);
   }
   
-
-  // Годовой отчёт
   if (year !== undefined && (quarterParam === undefined || quarterParam === 0 || quarterParam === 'annual' || quarterParam === 'год' || quarterParam === '4q')) {
-    // Ищем записи с длительностью для Q4 (12 месяцев = 350-370 дней)
     let annual = null;
     for (const v of sortedValues) {
       if (v.fy !== year) continue;
@@ -654,7 +619,6 @@ function getValueFromTag(tagData, metricName, year, quarterParam, isBalanceMetri
     }
   }
   
-  // Квартальные данные
   else if (year !== undefined && quarterParam) {
     const quarterInfo = parseQuarterStringCached(quarterParam);
     if (!quarterInfo) {
@@ -675,11 +639,9 @@ function getValueFromTag(tagData, metricName, year, quarterParam, isBalanceMetri
       }
     }
     else {
-      // Q1, Q2, Q3 (блок Q4 удалён)
       const targetFp = `Q${quarterInfo.num}`;
       
       if (quarterInfo.type === 'quarter') {
-        // q1, q2, q3: ищем 10-Q или 6-K
         const formsToTry = ['10-Q', '6-K'];
         let candidates = [];
         for (const form of formsToTry) {
@@ -691,13 +653,11 @@ function getValueFromTag(tagData, metricName, year, quarterParam, isBalanceMetri
           if (candidates.length > 0) break;
         }
         
-        // Ищем запись за 3 месяца (80-100 дней)
         let quarterValue = candidates.find(v => {
           const days = getDaysDifference(v.start, v.end);
           return days >= QUARTER_DAYS[1].min && days <= QUARTER_DAYS[1].max;
         });
         
-        // Для q2, q3: если нет 3-месячной записи, вычисляем через YTD
         if (!quarterValue && (quarterInfo.num === 2 || quarterInfo.num === 3)) {
           const ytdCurrent = candidates.find(v => {
             const days = getDaysDifference(v.start, v.end);
@@ -719,7 +679,6 @@ function getValueFromTag(tagData, metricName, year, quarterParam, isBalanceMetri
         log(`getValueFromTag: ${quarterParam} -> ${result}`);
       }
       else if (quarterInfo.type === 'ytd') {
-        // 1q, 2q, 3q: YTD
         let ytdValue = null;
         
         if (quarterInfo.num === 1) {
@@ -764,8 +723,6 @@ function getValueFromTag(tagData, metricName, year, quarterParam, isBalanceMetri
   return result;
 }
 
-// ============ ОСНОВНАЯ ЛОГИКА ПОИСКА (ВНУТРЕННЯЯ) ============
-
 function getMetricValueInternal(factsData, metric, year, quarterParam, scale, ticker) {
   const catalog = METRICS_CATALOG[metric];
   if (!catalog) {
@@ -773,7 +730,6 @@ function getMetricValueInternal(factsData, metric, year, quarterParam, scale, ti
     return null;
   }
   
-  // 4q сразу отправляем в годовой отчёт (превращаем в undefined)
   if (quarterParam === '4q') {
     quarterParam = undefined;
   }
@@ -782,7 +738,6 @@ function getMetricValueInternal(factsData, metric, year, quarterParam, scale, ti
   
   log(`getMetricValueInternal: ticker=${ticker}, metric=${metric}, year=${year}, quarterParam=${quarterParam}, isBalance=${isBalanceMetric}`);
   
-  // q4 = 4q − 3q
   if (quarterParam === 'q4') {
     const annual = getMetricValueInternal(factsData, metric, year, '4q', null, ticker);
     const ytdQ3 = getMetricValueInternal(factsData, metric, year, '3q', null, ticker);
@@ -790,10 +745,8 @@ function getMetricValueInternal(factsData, metric, year, quarterParam, scale, ti
     return result !== null ? applyScale(result, scale) : null;
   }
   
-  // Используем унифицированную функцию поиска
   let result = searchValueInAllTags(factsData, catalog, year, quarterParam, isBalanceMetric, ticker);
   
-  // Если не нашли и есть compute, пробуем вычислить через compute-теги
   if ((result === null || result === undefined) && catalog.compute && catalog.compute.length > 0) {
     log(`getMetricValueInternal: прямой поиск не дал результата, пробуем compute`);
     let sum = null;
@@ -826,18 +779,14 @@ function getMetricValueInternal(factsData, metric, year, quarterParam, scale, ti
   return result !== null ? applyScale(result, scale) : null;
 }
 
-// ============ TTM ФУНКЦИЯ ============
-
 function getTTMValue(factsData, metricName, scale, ticker) {
   const catalog = METRICS_CATALOG[metricName];
   const ttmType = catalog?.ttm || 'sum';
   
   log(`getTTMValue: ticker=${ticker}, metric=${metricName}, ttmType=${ttmType}`);
   
-  // Собираем значения из ВСЕХ тегов
   let allTagValues = collectAllTagValues(factsData, catalog.tags);
   
-  // Если нет прямых тегов, пробуем compute
   if ((!allTagValues || allTagValues.length === 0) && catalog.compute && catalog.compute.length > 0) {
     log(`getTTMValue: нет прямых тегов, собираем compute-теги`);
     const valuesMap = new Map();
@@ -865,7 +814,6 @@ function getTTMValue(factsData, metricName, scale, ticker) {
     return applyScale(result, scale);
   }
   
-  // P&L и Cash Flow
   const allReports = filterReportsWithFiled(allTagValues);
   if (allReports.length === 0) {
     log(`getTTMValue: нет отчётов с filed`);
@@ -924,8 +872,6 @@ function getTTMValue(factsData, metricName, scale, ticker) {
   log(`getTTMValue: сумма = ${sum}, validCount=${validCount}`);
   return applyScale(sum, scale);
 }
-
-// ============ ОСНОВНАЯ ФУНКЦИЯ ПОИСКА (ОБЁРТКА) ============
 
 function getMetricValue(factsData, metric, year, quarterParam, scale, ticker) {
   const cacheKey = `${ticker}:${metric}:${year}:${quarterParam}`;
@@ -987,7 +933,6 @@ async function fetchWithRetry(url, options, maxRetries = 3) {
 async function getCIK(ticker) {
   log(`getCIK: поиск CIK для тикера ${ticker}`);
   
-  // Проверяем cikCache
   if (CACHE_CONFIG.cikCache.enabled) {
     const cached = getFromCache(cikCache, ticker, CACHE_CONFIG.cikCache.ttl);
     if (cached !== null) {
@@ -996,7 +941,6 @@ async function getCIK(ticker) {
     }
   }
   
-  // Проверяем tickersCache
   let cik = null;
   if (tickersCache && isCacheValid({ time: tickersCacheTime }, CACHE_CONFIG.tickersCache.ttl)) {
     log(`getCIK: tickersCache HIT`);
@@ -1117,154 +1061,9 @@ async function getCompanyFacts(cik) {
   return data;
 }
 
-// ============ ФУНКЦИИ ДЛЯ ОТЧЁТОВ ============
+// ============ ЭНДПОИНТЫ ============
 
-function getReportByOrder(recent, reportType, n, field) {
-  const forms = recent.form || [];
-  const filingDates = recent.filingDate || [];
-  const reportDates = recent.reportDate || [];
-  const accessionNumbers = recent.accessionNumber || [];
-  const primaryDocuments = recent.primaryDocument || [];
-  
-  let foundIndex = -1;
-  let count = 0;
-  
-  for (let i = 0; i < forms.length; i++) {
-    if (forms[i] === reportType) {
-      if (count === n) {
-        foundIndex = i;
-        break;
-      }
-      count++;
-    }
-  }
-  
-  if (foundIndex === -1) return null;
-  
-  const filingDate = filingDates[foundIndex];
-  const reportDate = reportDates[foundIndex];
-  const accessionNumber = accessionNumbers[foundIndex];
-  const primaryDocument = primaryDocuments[foundIndex];
-  const cik = recent.cik;
-  
-  const report = {
-    form: reportType,
-    filingDate: filingDate,
-    reportDate: reportDate,
-    accessionNumber: accessionNumber,
-    primaryDocument: primaryDocument,
-    url: buildFilingUrl(cik, accessionNumber, primaryDocument),
-    year: parseInt(filingDate?.substring(0, 4)),
-    quarter: reportType === '10-Q' ? getQuarterFromDate(filingDate) : null
-  };
-  
-  if (field && report[field] !== undefined) {
-    return report[field];
-  }
-  
-  return report;
-}
-
-function getReportByDate(recent, reportType, year, quarter, field) {
-  const forms = recent.form || [];
-  const filingDates = recent.filingDate || [];
-  const reportDates = recent.reportDate || [];
-  const accessionNumbers = recent.accessionNumber || [];
-  const primaryDocuments = recent.primaryDocument || [];
-  const cik = recent.cik;
-  
-  for (let i = 0; i < forms.length; i++) {
-    if (forms[i] !== reportType) continue;
-    
-    const filingYear = parseInt(filingDates[i]?.substring(0, 4));
-    if (filingYear !== year) continue;
-    
-    if (reportType === '10-K') {
-      if (quarter === undefined || quarter === 0 || quarter === null) {
-        const report = {
-          form: reportType,
-          filingDate: filingDates[i],
-          reportDate: reportDates[i],
-          accessionNumber: accessionNumbers[i],
-          primaryDocument: primaryDocuments[i],
-          url: buildFilingUrl(cik, accessionNumbers[i], primaryDocuments[i]),
-          year: year,
-          quarter: null
-        };
-        return field ? report[field] : report;
-      }
-    } else if (reportType === '10-Q') {
-      const reportQuarter = getQuarterFromDate(filingDates[i]);
-      if (quarter !== undefined && reportQuarter === quarter) {
-        const report = {
-          form: reportType,
-          filingDate: filingDates[i],
-          reportDate: reportDates[i],
-          accessionNumber: accessionNumbers[i],
-          primaryDocument: primaryDocuments[i],
-          url: buildFilingUrl(cik, accessionNumbers[i], primaryDocuments[i]),
-          year: year,
-          quarter: reportQuarter
-        };
-        return field ? report[field] : report;
-      }
-    }
-  }
-  
-  return null;
-}
-
-// ============ ENDPOINTS ============
-
-app.get('/ping', (req, res) => {
-  log('GET /ping');
-  res.json({ status: 'alive', timestamp: new Date().toISOString() });
-});
-
-app.get('/catalog', async (req, res) => {
-  log('GET /catalog');
-  try {
-    const list = [];
-    for (const [key, val] of Object.entries(METRICS_CATALOG)) {
-      list.push({
-        alias: key,
-        ru: val.ru,
-        category: val.category,
-        ttm: val.ttm,
-        tags: val.tags
-      });
-    }
-    res.json({ metrics: list, count: list.length });
-  } catch (error) {
-    log(`GET /catalog error: ${error.message}`);
-    res.status(500).json({ error: error.message });
-  }
-});
-
-app.get('/validate/:metric', async (req, res) => {
-  log(`GET /validate/${req.params.metric}`);
-  try {
-    const resolved = resolveMetric(req.params.metric);
-    if (!resolved) {
-      const available = Object.keys(METRICS_CATALOG).slice(0, 20).join(', ');
-      return res.status(404).json({ 
-        error: 'Метрика не найдена',
-        available: available,
-        count: Object.keys(METRICS_CATALOG).length
-      });
-    }
-    res.json({ 
-      valid: true, 
-      metric: resolved,
-      info: METRICS_CATALOG[resolved]
-    });
-  } catch (error) {
-    log(`GET /validate error: ${error.message}`);
-    res.status(500).json({ error: error.message });
-  }
-});
-
-app.get('/metrics/:ticker', async (req, res) => {
+router.get('/:ticker', async (req, res) => {
   const ticker = req.params.ticker.toUpperCase();
   const year = req.query.year ? parseInt(req.query.year) : undefined;
   const quarter = req.query.quarter !== undefined ? String(req.query.quarter) : undefined;
@@ -1335,183 +1134,47 @@ app.get('/metrics/:ticker', async (req, res) => {
   }
 });
 
-app.get('/info/:ticker', async (req, res) => {
-  const ticker = req.params.ticker.toUpperCase();
-  log(`GET /info/${ticker}`);
-  
+router.get('/catalog', async (req, res) => {
+  log('GET /catalog');
   try {
-    const cik = await getCIK(ticker);
-    if (!cik) return res.status(404).json({ error: 'Тикер не найден' });
-    
-    const subData = await getSubmissions(cik);
-    if (!subData) return res.status(500).json({ error: 'Ошибка получения данных' });
-    
-    const recent = subData.filings?.recent || {};
-    recent.cik = cik;
-    
-    const forms = recent.form || [];
-    const filingDates = recent.filingDate || [];
-    const available10k = [];
-    const available10q = {};
-    
-    for (let i = 0; i < forms.length; i++) {
-      const form = forms[i];
-      const date = filingDates[i];
-      const year = date ? parseInt(date.substring(0, 4)) : null;
-      
-      if (form === '10-K' && year && !available10k.includes(year)) {
-        available10k.push(year);
-      }
-      if (form === '10-Q' && year) {
-        if (!available10q[year]) available10q[year] = [];
-        const quarter = getQuarterFromDate(date);
-        if (quarter && !available10q[year].includes(quarter)) {
-          available10q[year].push(quarter);
-        }
-      }
+    const list = [];
+    for (const [key, val] of Object.entries(METRICS_CATALOG)) {
+      list.push({
+        alias: key,
+        ru: val.ru,
+        category: val.category,
+        ttm: val.ttm,
+        tags: val.tags
+      });
     }
-    
-    const last10K = getReportByOrder(recent, '10-K', 0, null);
-    const last10Q = getReportByOrder(recent, '10-Q', 0, null);
-    
-    res.json({
-      cik: subData.cik,
-      name: subData.entityName,
-      ein: subData.ein || null,
-      description: subData.description || null,
-      category: subData.category || null,
-      fiscalYearEnd: subData.fiscalYearEnd || null,
-      stateOfIncorporation: subData.stateOfIncorporation || null,
-      phone: subData.phone || null,
-      website: subData.website || null,
-      investorWebsite: subData.investorWebsite || null,
-      businessAddress: subData.addresses?.business || null,
-      mailingAddress: subData.addresses?.mailing || null,
-      formerNames: subData.formerNames || [],
-      reports: {
-        available_10k_years: available10k.sort((a, b) => b - a),
-        available_10q_years: available10q,
-        last_10K: last10K,
-        last_10Q: last10Q
-      }
+    res.json({ metrics: list, count: list.length });
+  } catch (error) {
+    log(`GET /catalog error: ${error.message}`);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+router.get('/validate/:metric', async (req, res) => {
+  log(`GET /validate/${req.params.metric}`);
+  try {
+    const resolved = resolveMetric(req.params.metric);
+    if (!resolved) {
+      const available = Object.keys(METRICS_CATALOG).slice(0, 20).join(', ');
+      return res.status(404).json({ 
+        error: 'Метрика не найдена',
+        available: available,
+        count: Object.keys(METRICS_CATALOG).length
+      });
+    }
+    res.json({ 
+      valid: true, 
+      metric: resolved,
+      info: METRICS_CATALOG[resolved]
     });
   } catch (error) {
-    log(`GET /info error: ${error.message}`);
+    log(`GET /validate error: ${error.message}`);
     res.status(500).json({ error: error.message });
   }
 });
 
-app.get('/submissions/:identifier', async (req, res) => {
-  const identifier = req.params.identifier;
-  log(`GET /submissions/${identifier}`);
-  
-  try {
-    let cik = null;
-    
-    if (/^\d{1,10}$/.test(identifier)) {
-      cik = identifier.replace(/^0+/, '').padStart(10, '0');
-    } else {
-      cik = await getCIK(identifier.toUpperCase());
-    }
-    
-    if (!cik) return res.status(404).json({ error: 'Тикер или CIK не найден' });
-    
-    const subData = await getSubmissions(cik);
-    if (!subData) return res.status(500).json({ error: 'Ошибка получения данных' });
-    
-    res.json(subData);
-  } catch (error) {
-    log(`GET /submissions error: ${error.message}`);
-    res.status(500).json({ error: error.message });
-  }
-});
-
-app.get('/actions/reports/:ticker', async (req, res) => {
-  const ticker = req.params.ticker.toUpperCase();
-  log(`GET /actions/reports/${ticker}`);
-  
-  try {
-    const cik = await getCIK(ticker);
-    if (!cik) return res.status(404).json({ error: 'Тикер не найден' });
-    
-    const subData = await getSubmissions(cik);
-    if (!subData) return res.status(500).json({ error: 'Ошибка получения данных' });
-    
-    const recent = subData.filings?.recent || {};
-    recent.cik = cik;
-    
-    const reportType = req.query.type;
-    if (!reportType) return res.status(400).json({ error: 'Укажите type (10-K, 10-Q, 8-K)' });
-    
-    const mode = req.query.mode;
-    const n = req.query.n ? parseInt(req.query.n) : null;
-    const year = req.query.year ? parseInt(req.query.year) : null;
-    const quarter = req.query.quarter ? parseInt(req.query.quarter) : null;
-    const field = req.query.field || null;
-    
-    let result = null;
-    
-    if (mode === 'last' && n !== null) {
-      result = getReportByOrder(recent, reportType, n, field);
-    } else if (mode === 'date' && year !== null) {
-      result = getReportByDate(recent, reportType, year, quarter, field);
-    } else {
-      return res.status(400).json({ error: 'Неверные параметры. Используйте mode=last&n=N или mode=date&year=YYYY' });
-    }
-    
-    if (!result) return res.status(404).json({ error: 'Отчёт не найден' });
-    res.json(result);
-  } catch (error) {
-    log(`GET /actions/reports error: ${error.message}`);
-    res.status(500).json({ error: error.message });
-  }
-});
-
-app.get('/companyfacts/:ticker', async (req, res) => {
-  const ticker = req.params.ticker.toUpperCase();
-  log(`GET /companyfacts/${ticker}`);
-  
-  try {
-    const cik = await getCIK(ticker);
-    if (!cik) return res.status(404).json({ error: 'Тикер не найден' });
-    
-    const factsData = await getCompanyFacts(cik);
-    if (!factsData) return res.status(500).json({ error: 'Ошибка получения данных' });
-    
-    res.json(factsData);
-  } catch (error) {
-    log(`GET /companyfacts error: ${error.message}`);
-    res.status(500).json({ error: error.message });
-  }
-});
-
-app.get('/company-tickers', async (req, res) => {
-  log('GET /company-tickers');
-  
-  try {
-    const response = await fetchWithRetry(`${SEC_BASE}/files/company_tickers.json`, {
-      headers: { 'User-Agent': USER_AGENT }
-    });
-    const data = await response.json();
-    res.json(data);
-  } catch (error) {
-    log(`GET /company-tickers error: ${error.message}`);
-    res.status(500).json({ error: error.message });
-  }
-});
-
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log(`SEC Proxy server running on port ${PORT}`);
-  console.log(`Endpoints available:`);
-  console.log(`  GET /catalog`);
-  console.log(`  GET /validate/:metric`);
-  console.log(`  GET /metrics/:ticker`);
-  console.log(`  GET /info/:ticker`);
-  console.log(`  GET /submissions/:identifier`);
-  console.log(`  GET /actions/reports/:ticker`);
-  console.log(`  GET /companyfacts/:ticker`);
-  console.log(`  GET /company-tickers`);
-  console.log(`  GET /ping`);
-  console.log(`Кэш TTL: tickers=24ч, cik=24ч, facts=6ч, metrics=5мин, submissions=24ч, companyMeta=24ч, quarterParse=∞`);
-});
+module.exports = router;
