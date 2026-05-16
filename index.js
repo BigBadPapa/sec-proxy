@@ -1,15 +1,12 @@
 const express = require('express');
 const app = express();
 
-// Подключаем роутер метрик
 const metricsRouter = require('./edgar_metrics');
+const infoRouter = require('./edgar_info');
+
 app.use('/metrics', metricsRouter);
+app.use('/info', infoRouter);
 
-// Подключаем роутер info (когда создашь)
-// const infoRouter = require('./edgar_info');
-// app.use('/info', infoRouter);
-
-// Health check
 app.get('/ping', (req, res) => {
   res.json({ status: 'alive', timestamp: new Date().toISOString() });
 });
