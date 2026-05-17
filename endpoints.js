@@ -1,4 +1,6 @@
 // ============ ENDPOINTS.JS - ВСЕ ЭНДПОИНТЫ SEC ============
+// Полный список эндпоинтов из официальной документации SEC
+// Примеры для AAPL: https://sec-proxy-2tup.onrender.com/...
 
 const express = require('express');
 const router = express.Router();
@@ -6,10 +8,6 @@ const router = express.Router();
 // Подключаем логику
 const metricsLogic = require('./edgar_metrics');
 const infoLogic = require('./edgar_info');
-const actionsLogic = require('./edgar_actions');
-const searchLogic = require('./edgar_search');
-const indexLogic = require('./edgar_index');
-const bulkLogic = require('./edgar_bulk');
 
 // ============ 1. COMPANY TICKERS ============
 
@@ -48,121 +46,151 @@ router.get('/frames/:taxonomy/:tag/:unit/:period', infoLogic.getFrames);
 // ============ 4. FINANCIAL METRICS (КАСТОМНЫЕ) ============
 
 // 4.1. Финансовые показатели с обработкой (TTM, compute, масштабы)
+// Пример: https://sec-proxy-2tup.onrender.com/metrics/AAPL?metrics=revenue&year=2024&quarter=4&scale=kkk
 router.get('/metrics/:ticker', metricsLogic.getMetric);
 
 // 4.2. Справочник метрик
+// Пример: https://sec-proxy-2tup.onrender.com/catalog
 router.get('/catalog', metricsLogic.getCatalog);
 
 // 4.3. Валидация метрики
+// Пример: https://sec-proxy-2tup.onrender.com/validate/revenue
 router.get('/validate/:metric', metricsLogic.validateMetric);
 
 // ============ 5. COMPANY INFO (СТАТИКА) ============
 
 // 5.1. Статическая информация о компании
+// Пример: https://sec-proxy-2tup.onrender.com/info/AAPL
 router.get('/info/:ticker', infoLogic.getInfo);
 
 // 5.2. Метаданные компании (кратко)
+// Пример: https://sec-proxy-2tup.onrender.com/company-meta/AAPL
 router.get('/company-meta/:ticker', infoLogic.getCompanyMeta);
 
-// ============ 6. FULL-TEXT SEARCH ============
+// ============ 6. ACTIONS (КОРПОРАТИВНЫЕ ДЕЙСТВИЯ) - ЗАГЛУШКИ ============
 
-// 6.1. Полнотекстовый поиск по всем filings
-// Пример: https://efts.sec.gov/LATEST/search-index?q=artificial+intelligence&forms=10-K
-router.get('/search', searchLogic.fullTextSearch);
+// 6.1. Отчёты по тикеру
+router.get('/actions/reports/:ticker', (req, res) => {
+  res.status(501).json({ error: 'Not implemented yet', endpoint: req.path });
+});
 
-// ============ 7. INDEX FILES ============
+// 6.2. Отчёт по accession number
+router.get('/actions/report/:cik/:accessionNumber', (req, res) => {
+  res.status(501).json({ error: 'Not implemented yet', endpoint: req.path });
+});
 
-// 7.1. Дневной индекс (JSON)
-// Пример: https://www.sec.gov/edgar/daily-index/2024/QTR4/master.2024-10-01.json
-router.get('/daily-index/:year/:quarter/:date', indexLogic.getDailyIndex);
+// 6.3. Инсайдерские сделки
+router.get('/actions/insider/:ticker', (req, res) => {
+  res.status(501).json({ error: 'Not implemented yet', endpoint: req.path });
+});
 
-// 7.2. Полный индекс за квартал
-// Пример: https://www.sec.gov/edgar/full-index/2024/QTR4/master.idx
-router.get('/full-index/:year/:quarter', indexLogic.getFullIndex);
+// 6.4. Дивиденды
+router.get('/actions/dividends/:ticker', (req, res) => {
+  res.status(501).json({ error: 'Not implemented yet', endpoint: req.path });
+});
 
-// 7.3. Дневной индекс по компаниям
-router.get('/daily-index/:year/:quarter/company/:date', indexLogic.getDailyIndexCompany);
+// 6.5. Количество акций
+router.get('/actions/shares/:ticker', (req, res) => {
+  res.status(501).json({ error: 'Not implemented yet', endpoint: req.path });
+});
 
-// 7.4. Дневной индекс по формам
-router.get('/daily-index/:year/:quarter/form/:date', indexLogic.getDailyIndexForm);
+// 6.6. Выкуп акций
+router.get('/actions/buybacks/:ticker', (req, res) => {
+  res.status(501).json({ error: 'Not implemented yet', endpoint: req.path });
+});
 
-// ============ 8. BULK DATA ============
+// 6.7. Сплиты
+router.get('/actions/splits/:ticker', (req, res) => {
+  res.status(501).json({ error: 'Not implemented yet', endpoint: req.path });
+});
 
-// 8.1. Bulk submissions (ZIP)
-// Пример: https://www.sec.gov/Archives/edgar/daily-index/bulkdata/submissions.zip
-router.get('/bulk/submissions', bulkLogic.getSubmissionsBulk);
+// 6.8. Институциональные владельцы
+router.get('/actions/ownership/:ticker', (req, res) => {
+  res.status(501).json({ error: 'Not implemented yet', endpoint: req.path });
+});
 
-// 8.2. Bulk companyfacts (ZIP)
-// Пример: https://www.sec.gov/Archives/edgar/daily-index/xbrl/companyfacts.zip
-router.get('/bulk/companyfacts', bulkLogic.getCompanyFactsBulk);
+// 6.9. Голосования акционеров
+router.get('/actions/meetings/:ticker', (req, res) => {
+  res.status(501).json({ error: 'Not implemented yet', endpoint: req.path });
+});
 
-// ============ 9. DOCUMENT DOWNLOAD ============
+// 6.10. Смена руководства
+router.get('/actions/executive/:ticker', (req, res) => {
+  res.status(501).json({ error: 'Not implemented yet', endpoint: req.path });
+});
 
-// 9.1. HTML файл отчёта
-// Пример: https://www.sec.gov/Archives/edgar/data/320193/000032019324000123/aapl-20240928.htm
-router.get('/document/:cik/:accessionNo/:document', actionsLogic.getDocument);
+// 6.11. Публичные предложения
+router.get('/actions/offerings/:ticker', (req, res) => {
+  res.status(501).json({ error: 'Not implemented yet', endpoint: req.path });
+});
 
-// 9.2. JSON-индекс файлов отчёта
-// Пример: https://www.sec.gov/Archives/edgar/data/320193/000032019324000123/index.json
-router.get('/document-index/:cik/:accessionNo', actionsLogic.getDocumentIndex);
+// 6.12. Принудительные меры SEC
+router.get('/actions/enforcement/:ticker', (req, res) => {
+  res.status(501).json({ error: 'Not implemented yet', endpoint: req.path });
+});
 
-// 9.3. Inline XBRL просмотрщик
-// Пример: https://www.sec.gov/ix?doc=/Archives/edgar/data/320193/000032019324000123/aapl-20240928.htm
-router.get('/ix', actionsLogic.getInlineXbrl);
+// ============ 7. DOCUMENT DOWNLOAD ============
 
-// ============ 10. RSS FEEDS ============
+// 7.1. HTML файл отчёта
+router.get('/document/:cik/:accessionNo/:document', (req, res) => {
+  res.status(501).json({ error: 'Not implemented yet', endpoint: req.path });
+});
 
-// 10.1. RSS по компании и форме
-// Пример: https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0000320193&type=10-K&output=atom
-router.get('/rss/company/:cik', indexLogic.getRssCompany);
+// 7.2. JSON-индекс файлов отчёта
+router.get('/document-index/:cik/:accessionNo', (req, res) => {
+  res.status(501).json({ error: 'Not implemented yet', endpoint: req.path });
+});
 
-// 10.2. RSS последних подач по форме
-// Пример: https://www.sec.gov/cgi-bin/browse-edgar?action=getcurrent&type=10-K&output=atom
-router.get('/rss/latest/:form', indexLogic.getRssLatest);
+// 7.3. Inline XBRL просмотрщик
+router.get('/ix', (req, res) => {
+  res.status(501).json({ error: 'Not implemented yet', endpoint: req.path });
+});
 
-// ============ 11. ACTIONS (ОТЧЁТЫ И СОБЫТИЯ) ============
+// ============ 8. FULL-TEXT SEARCH ============
 
-// 11.1. Отчёты по тикеру, форме, году, кварталу
-router.get('/actions/reports/:ticker', actionsLogic.getReport);
+router.get('/search', (req, res) => {
+  res.status(501).json({ error: 'Not implemented yet', endpoint: req.path });
+});
 
-// 11.2. Отчёт по accession number
-router.get('/actions/report/:cik/:accessionNumber', actionsLogic.getReportByAccession);
+// ============ 9. INDEX FILES ============
 
-// 11.3. Инсайдерские сделки (формы 3,4,5)
-router.get('/actions/insider/:ticker', actionsLogic.getInsiderTrades);
+router.get('/daily-index/:year/:quarter/:date', (req, res) => {
+  res.status(501).json({ error: 'Not implemented yet', endpoint: req.path });
+});
 
-// 11.4. Дивиденды
-router.get('/actions/dividends/:ticker', actionsLogic.getDividends);
+router.get('/full-index/:year/:quarter', (req, res) => {
+  res.status(501).json({ error: 'Not implemented yet', endpoint: req.path });
+});
 
-// 11.5. Количество акций в обращении
-router.get('/actions/shares/:ticker', actionsLogic.getSharesOutstanding);
+router.get('/daily-index/:year/:quarter/company/:date', (req, res) => {
+  res.status(501).json({ error: 'Not implemented yet', endpoint: req.path });
+});
 
-// 11.6. Выкуп акций
-router.get('/actions/buybacks/:ticker', actionsLogic.getBuybacks);
+router.get('/daily-index/:year/:quarter/form/:date', (req, res) => {
+  res.status(501).json({ error: 'Not implemented yet', endpoint: req.path });
+});
 
-// 11.7. Сплиты акций
-router.get('/actions/splits/:ticker', actionsLogic.getSplits);
+// ============ 10. BULK DATA ============
 
-// 11.8. Институциональные владельцы (13F)
-router.get('/actions/ownership/:ticker', actionsLogic.getInstitutionalOwners);
+router.get('/bulk/submissions', (req, res) => {
+  res.status(501).json({ error: 'Not implemented yet', endpoint: req.path });
+});
 
-// 11.9. Голосования акционеров
-router.get('/actions/meetings/:ticker', actionsLogic.getShareholderMeetings);
+router.get('/bulk/companyfacts', (req, res) => {
+  res.status(501).json({ error: 'Not implemented yet', endpoint: req.path });
+});
 
-// 11.10. Смена руководства
-router.get('/actions/executive/:ticker', actionsLogic.getExecutiveChanges);
+// ============ 11. RSS FEEDS ============
 
-// 11.11. Публичные предложения (IPO, S-1)
-router.get('/actions/offerings/:ticker', actionsLogic.getOfferings);
+router.get('/rss/company/:cik', (req, res) => {
+  res.status(501).json({ error: 'Not implemented yet', endpoint: req.path });
+});
 
-// 11.12. Принудительные меры SEC
-router.get('/actions/enforcement/:ticker', actionsLogic.getEnforcementActions);
+router.get('/rss/latest/:form', (req, res) => {
+  res.status(501).json({ error: 'Not implemented yet', endpoint: req.path });
+});
 
 // ============ 12. ВСПОМОГАТЕЛЬНЫЕ ============
-
-router.get('/ping', (req, res) => {
-  res.json({ status: 'alive', timestamp: new Date().toISOString() });
-});
 
 router.get('/version', (req, res) => {
   res.json({ version: '1.0.0', name: 'SEC Proxy' });
