@@ -10,16 +10,12 @@ const endpoints = require('./endpoints');
 // Монтируем все эндпоинты на корневой путь
 app.use('/', endpoints);
 
-// Health check (можно оставить здесь или перенести в endpoints.js)
+// Health check (дублируем здесь для надёжности)
 app.get('/ping', (req, res) => {
-  res.json({ 
-    status: 'alive', 
-    timestamp: new Date().toISOString(),
-    uptime: process.uptime()
-  });
+  res.json({ status: 'alive', timestamp: new Date().toISOString() });
 });
 
-// Простой логгер для отладки (опционально)
+// Простой логгер для отладки
 app.use((req, res, next) => {
   console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`);
   next();
@@ -27,20 +23,13 @@ app.use((req, res, next) => {
 
 // Обработка 404 (не найден)
 app.use((req, res) => {
-  res.status(404).json({ 
-    error: 'Endpoint not found',
-    path: req.url,
-    method: req.method
-  });
+  res.status(404).json({ error: 'Endpoint not found', path: req.url, method: req.method });
 });
 
 // Обработка ошибок
 app.use((err, req, res, next) => {
   console.error(`[${new Date().toISOString()}] Error:`, err.message);
-  res.status(500).json({ 
-    error: 'Internal server error',
-    message: err.message
-  });
+  res.status(500).json({ error: 'Internal server error', message: err.message });
 });
 
 const PORT = process.env.PORT || 3000;
@@ -54,4 +43,4 @@ app.listen(PORT, () => {
   console.log(`========================================`);
 });
 
-module.exports = app; // для тестирования (опционально)
+module.exports = app;
