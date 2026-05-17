@@ -1,4 +1,4 @@
-// ============ INDEX.JS - ТОЧКА ВХОДА (ROUTER) ============
+// ============ INDEX.JS - ТОЧКА ВХОДА (ROUTER) =============
 // Этот файл только запускает сервер и подключает endpoints.js
 
 const express = require('express');
