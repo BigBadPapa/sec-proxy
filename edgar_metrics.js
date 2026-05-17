@@ -1,15 +1,14 @@
 // ============ EDGAR_METRICS.JS - ЛОГИКА ДЛЯ /METRICS ЭНДПОИНТОВ ==========
-// Этот файл содержит ТОЛЬКО логику (функции), без эндпоинтов
+// Этот файл содержит ТОЛЬКО логику, без эндпоинтов
 // Эндпоинты вынесены в endpoints.js
 
-// ============ 1. ИМПОРТЫ И КОНФИГУРАЦИЯ ==========
 const fetch = require('node-fetch');
+
+// ============ 1. КОНСТАНТЫ ==========
 
 const USER_AGENT = 'GoogleSheetsSEC contact@example.com';
 const SEC_BASE = 'https://www.sec.gov';
 const DATA_BASE = 'https://data.sec.gov';
-
-// ============ 2. КОНСТАНТЫ ==========
 
 // Константы для длительности кварталов (в днях)
 const QUARTER_DAYS = {
@@ -19,49 +18,35 @@ const QUARTER_DAYS = {
   4: { min: 350, max: 370 }   // Q4: 12 месяцев
 };
 
-// ============ 3. НАСТРОЙКИ КЭШЕЙ ==========
+// ============ 2. НАСТРОЙКИ КЭШЕЙ ==========
 const CACHE_CONFIG = {
-  // 3.1. Кэш для тикеров (company_tickers.json)
+  // Кэш для тикеров (company_tickers.json)
   // TTL: 24 часа, размер: 1 запись
-  // Назначение: маппинг тикер → CIK для всех компаний
   tickersCache: { enabled: true, ttl: 24 * 60 * 60 * 1000, maxSize: 1 },
-  
-  // 3.2. Кэш для CIK по тикеру
+  // Кэш для CIK по тикеру
   // TTL: 24 часа, размер: 500 записей
-  // Назначение: быстрый поиск CIK по тикеру
   cikCache: { enabled: true, ttl: 24 * 60 * 60 * 1000, maxSize: 500 },
-  
-  // 3.3. Кэш для companyfacts (финансовые данные XBRL)
+  // Кэш для companyfacts (финансовые данные XBRL)
   // TTL: 6 часов, размер: 20 записей
-  // Назначение: хранение всех XBRL фактов компании
   factsCache: { enabled: true, ttl: 6 * 60 * 60 * 1000, maxSize: 20 },
-  
-  // 3.4. Кэш для результатов метрик
+  // Кэш для результатов метрик
   // TTL: 5 минут, размер: 1000 записей
-  // Назначение: кэширование результатов конкретных запросов
   metricsCache: { enabled: true, ttl: 5 * 60 * 1000, maxSize: 1000 },
-  
-  // 3.5. Кэш для submissions (метаданные компании)
+  // Кэш для submissions (метаданные компании)
   // TTL: 24 часа, размер: 20 записей
-  // Назначение: хранение метаданных компании
   submissionsCache: { enabled: true, ttl: 24 * 60 * 60 * 1000, maxSize: 20 },
-  
-  // 3.6. Кэш для разбора строки квартала
+  // Кэш для разбора строки квартала
   // TTL: бесконечный, размер: 50 записей
-  // Назначение: кэширование результатов parseQuarterString
   quarterParseCache: { enabled: true, ttl: Infinity, maxSize: 50 },
-  
-  // 3.7. Кэш для вычисления длительности (пока отключён)
+  // Кэш для вычисления длительности (пока отключён)
   durationCache: { enabled: false, ttl: Infinity, maxSize: 1000 },
-  
-  // 3.8. Кэш для collectAllTagValues (отключён)
+  // Кэш для collectAllTagValues (отключён)
   collectAllTagValuesCache: { enabled: false, ttl: 6 * 60 * 60 * 1000, maxSize: 50 },
-  
-  // 3.9. Кэш для getMetricValuesArray (отключён)
+  // Кэш для getMetricValuesArray (отключён)
   getMetricValuesArrayCache: { enabled: false, ttl: 6 * 60 * 60 * 1000, maxSize: 200 }
 };
 
-// ============ 4. ПЕРЕМЕННЫЕ КЭШЕЙ ==========
+// ============ 3. ПЕРЕМЕННЫЕ КЭШЕЙ ==========
 let tickersCache = null;
 let tickersCacheTime = 0;
 
@@ -74,9 +59,9 @@ const durationCache = new Map();
 const collectAllTagValuesCache = new Map();
 const getMetricValuesArrayCache = new Map();
 
-// ============ 5. ПОЛНЫЙ СПРАВОЧНИК МЕТРИК ==========
+// ============ 4. ПОЛНЫЙ СПРАВОЧНИК МЕТРИК ==========
 const METRICS_CATALOG = {
-  // 5.1. P&L (Отчёт о прибыли)
+  // P&L
   revenue: { tags: ['Revenues', 'RevenueFromContractWithCustomerExcludingAssessedTax', 'RevenueFromContractWithCustomerIncludingAssessedTax', 'RevenuesNetOfInterestExpense', 'RegulatedAndUnregulatedOperatingRevenue', 'RegulatedOperatingRevenue', 'InvestmentBankingRevenue', 'GrossInvestmentIncomeOperating'], compute: ['InterestIncomeExpenseNet', 'NoninterestIncome'], operation: 'sum', category: 'P&L', ttm: 'sum', ru: 'Выручка' },
   cogs: { tags: ['CostOfGoodsAndServicesSold', 'CostOfRevenue', 'CostOfSales', 'CostsAndExpenses', 'CostOfServices'], category: 'P&L', ttm: 'sum', ru: 'Себестоимость' },
   grossprofit: { tags: ['GrossProfit'], category: 'P&L', ttm: 'sum', ru: 'Валовая прибыль' },
@@ -92,7 +77,7 @@ const METRICS_CATALOG = {
   netincome: { tags: ['NetIncomeLoss', 'ProfitLoss', 'NetIncomeLossAvailableToCommonStockholdersBasic', 'ComprehensiveIncomeNetOfTax'], category: 'P&L', ttm: 'sum', ru: 'Чистая прибыль' },
   aaa: { tags: ['ExciseAndSalesTaxes'], category: 'P&L', ttm: 'sum', ru: 'Акцизы' },
   
-  // 5.2. Balance Sheet - Assets (Баланс - Активы)
+  // Balance Sheet - Assets
   totalassets: { tags: ['Assets'], category: 'Balance', ttm: 'last', ru: 'ВСЕГО АКТИВЫ' },
   currentassets: { tags: ['AssetsCurrent'], category: 'Balance', ttm: 'last', ru: 'Оборотные активы' },
   cashandequivalents: { tags: ['CashAndCashEquivalentsAtCarryingValue', 'CashAndCashEquivalentsAtFairValue', 'CashCashEquivalentsAndShortTermInvestments', 'CashAndDueFromBanks'], category: 'Balance', ttm: 'last', ru: 'Деньги и эквиваленты' },
@@ -110,7 +95,7 @@ const METRICS_CATALOG = {
   deferredtaxassets: { tags: ['DeferredTaxAssetsNet'], category: 'Balance', ttm: 'last', ru: 'Отложенные налоговые активы' },
   othernoncurrentassets: { tags: ['OtherAssetsNoncurrent'], category: 'Balance', ttm: 'last', ru: 'Прочие внеоборотные активы' },
 
-  // 5.3. Balance Sheet - Liabilities (Баланс - Обязательства)
+  // Balance Sheet - Liabilities
   totalliabilities: { tags: ['Liabilities'], category: 'Balance', ttm: 'last', ru: 'ВСЕГО ОБЯЗАТЕЛЬСТВА' },
   totalcurrentliabilities: { tags: ['LiabilitiesCurrent'], category: 'Balance', ttm: 'last', ru: 'Итого краткосрочные обязательства' },
   accountspayable: { tags: ['AccountsPayableCurrent'], category: 'Balance', ttm: 'last', ru: 'Кредиторская задолженность' },
@@ -126,7 +111,7 @@ const METRICS_CATALOG = {
   pensionliabilities: { tags: ['PensionAndOtherPostretirementDefinedBenefitPlansLiabilitiesNoncurrent'], category: 'Balance', ttm: 'last', ru: 'Пенсионные обязательства' },
   othernoncurrentliabilities: { tags: ['OtherLiabilitiesNoncurrent'], category: 'Balance', ttm: 'last', ru: 'Прочие долгосрочные обязательства' },
 
-  // 5.4. Equity (Капитал)
+  // Equity
   preferredstock: { tags: ['PreferredStockValue', 'PreferredStockSharesOutstanding'], category: 'Equity', ttm: 'last', ru: 'Привилегированные акции' },
   commonstock: { tags: ['CommonStockValue', 'CommonStocksIncludingAdditionalPaidInCapital'], category: 'Equity', ttm: 'last', ru: 'Обыкновенные акции' },
   additionalpaidincapital: { tags: ['AdditionalPaidInCapital'], category: 'Equity', ttm: 'last', ru: 'Дополнительный капитал' },
@@ -135,7 +120,7 @@ const METRICS_CATALOG = {
   treasurystock: { tags: ['TreasuryStockValue', 'TreasuryStockCommon'], category: 'Equity', ttm: 'last', ru: 'Казначейские акции' },
   totalequity: { tags: ['StockholdersEquity', 'PartnersCapital', 'MembersEquity', 'Equity'], category: 'Equity', ttm: 'last', ru: 'ВСЕГО КАПИТАЛ' },
 
-  // 5.5. Cash Flow (Денежные потоки)
+  // Cash Flow
   ocf: { tags: ['NetCashProvidedByUsedInOperatingActivities', 'NetCashProvidedByUsedInOperatingActivitiesContinuingOperations', 'CashFlowsFromUsedInOperatingActivities'], category: 'CashFlow', ttm: 'sum', ru: 'OCF' },
   icf: { tags: ['NetCashProvidedByUsedInInvestingActivities', 'CashFlowsFromUsedInInvestingActivities'], category: 'CashFlow', ttm: 'sum', ru: 'ICF' },
   fcf: { tags: ['NetCashProvidedByUsedInFinancingActivities', 'CashFlowsFromUsedInFinancingActivities'], category: 'CashFlow', ttm: 'sum', ru: 'FCF' },
@@ -164,7 +149,7 @@ const METRICS_CATALOG = {
   beginningcash: { tags: ['CashAndCashEquivalentsAtBeginningOfPeriod'], category: 'CashFlow', ttm: 'last', ru: 'Деньги на начало' },
   endingcash: { tags: ['CashAndCashEquivalentsAtEndOfPeriod'], category: 'CashFlow', ttm: 'last', ru: 'Деньги на конец' },
 
-  // 5.6. Per Share (На акцию)
+  // Per Share
   sharesbasic: { tags: ['WeightedAverageNumberOfSharesOutstandingBasic'], category: 'PerShare', ttm: 'last', ru: 'Акции basic' },
   sharesdiluted: { tags: ['WeightedAverageNumberOfDilutedSharesOutstanding'], category: 'PerShare', ttm: 'last', ru: 'Акции diluted' },
   sharesoutstanding: { tags: ['CommonStockSharesOutstanding', 'EntityCommonStockSharesOutstanding'], category: 'PerShare', ttm: 'last', ru: 'Акции в обращении' },
@@ -174,7 +159,7 @@ const METRICS_CATALOG = {
   dividendspershare: { tags: ['CommonStockDividendsPerShareDeclared', 'DividendsPerShare'], category: 'PerShare', ttm: 'sum', ru: 'DPS' }
 };
 
-// ============ 6. РУССКИЕ АЛИАСЫ ==========
+// ============ 5. РУССКИЕ АЛИАСЫ ==========
 const RU_ALIASES = {
   выручка: 'revenue',
   себестоимость: 'cogs',
@@ -193,9 +178,8 @@ const RU_ALIASES = {
   амортизация: 'da'
 };
 
-// ============ 7. ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ==========
+// ============ 6. ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ==========
 
-// 7.1. Логирование с timestamp
 function log(message, data = null) {
   const timestamp = new Date().toISOString();
   if (data) {
@@ -205,14 +189,12 @@ function log(message, data = null) {
   }
 }
 
-// 7.2. Безопасное преобразование даты
 function safeDateValue(dateStr) {
   if (!dateStr) return 0;
   const t = new Date(dateStr).getTime();
   return isNaN(t) ? 0 : t;
 }
 
-// 7.3. Сортировка по end (свежие первые) — иммутабельно
 function sortByEndDesc(values) {
   return [...values].sort((a, b) => {
     const endA = safeDateValue(a.end);
@@ -221,7 +203,6 @@ function sortByEndDesc(values) {
   });
 }
 
-// 7.4. Сортировка по start (свежие первые) — иммутабельно
 function sortByStartDesc(values) {
   return [...values].sort((a, b) => {
     const startA = safeDateValue(a.start);
@@ -230,13 +211,11 @@ function sortByStartDesc(values) {
   });
 }
 
-// 7.5. Фильтр отчётов с полем filed
 function filterReportsWithFiled(values) {
   const reportForms = ['10-K', '10-Q', '20-F', '40-F', '6-K'];
   return values.filter(v => reportForms.includes(v.form) && v.filed);
 }
 
-// 7.6. Поиск годового отчёта
 function findAnnualReport(values, year) {
   const forms = ['10-K', '20-F', '40-F'];
   for (const form of forms) {
@@ -246,7 +225,6 @@ function findAnnualReport(values, year) {
   return null;
 }
 
-// 7.7. Поиск квартального отчёта
 function findQuarterlyReport(values, year, fp, forms = ['10-Q', '6-K']) {
   for (const form of forms) {
     const report = values.find(v => v.form === form && v.fy === year && v.fp === fp);
@@ -255,20 +233,6 @@ function findQuarterlyReport(values, year, fp, forms = ['10-Q', '6-K']) {
   return null;
 }
 
-// 7.8. Дедупликация записей по ключу
-function deduplicateByKey(values, getKey) {
-  const map = new Map();
-  for (const v of values) {
-    const key = getKey(v);
-    const existing = map.get(key);
-    if (!existing || safeDateValue(v.filed) > safeDateValue(existing.filed)) {
-      map.set(key, v);
-    }
-  }
-  return Array.from(map.values());
-}
-
-// 7.9. Получение количества дней между датами (с опциональным кэшем)
 function getDaysDifference(start, end) {
   if (!CACHE_CONFIG.durationCache.enabled) {
     return (new Date(end) - new Date(start)) / (1000 * 60 * 60 * 24);
@@ -285,7 +249,6 @@ function getDaysDifference(start, end) {
   return days;
 }
 
-// 7.10. Парсинг строки квартала (с кэшем)
 function parseQuarterStringCached(quarterStr) {
   if (!quarterStr || typeof quarterStr !== 'string') return null;
   
@@ -313,29 +276,6 @@ function parseQuarterStringCached(quarterStr) {
   return result;
 }
 
-// 7.11. Нормализация масштаба
-function normalizeScale(scale) {
-  if (!scale) return null;
-  const str = String(scale).toLowerCase().trim();
-  if (str === 'k' || str === 'т' || str === 'тысячи') return 'k';
-  if (str === 'kk' || str === 'м' || str === 'миллионы') return 'kk';
-  if (str === 'kkk' || str === 'млрд' || str === 'миллиарды') return 'kkk';
-  return null;
-}
-
-// 7.12. Применение масштаба
-function applyScale(value, scale) {
-  if (value === null || value === undefined) return null;
-  if (!scale) return value;
-  switch (scale) {
-    case 'k': return value / 1000;
-    case 'kk': return value / 1000000;
-    case 'kkk': return value / 1000000000;
-    default: return value;
-  }
-}
-
-// 7.13. Разбор алиаса метрики
 function resolveMetric(alias) {
   const normalized = alias.toString().trim().toLowerCase().replace(/[\s_-]/g, '');
   
@@ -350,7 +290,27 @@ function resolveMetric(alias) {
   return null;
 }
 
-// ============ 8. ФУНКЦИИ-ХЕЛПЕРЫ ДЛЯ КЭШИРОВАНИЯ ==========
+function normalizeScale(scale) {
+  if (!scale) return null;
+  const str = String(scale).toLowerCase().trim();
+  if (str === 'k' || str === 'т' || str === 'тысячи') return 'k';
+  if (str === 'kk' || str === 'м' || str === 'миллионы') return 'kk';
+  if (str === 'kkk' || str === 'млрд' || str === 'миллиарды') return 'kkk';
+  return null;
+}
+
+function applyScale(value, scale) {
+  if (value === null || value === undefined) return null;
+  if (!scale) return value;
+  switch (scale) {
+    case 'k': return value / 1000;
+    case 'kk': return value / 1000000;
+    case 'kkk': return value / 1000000000;
+    default: return value;
+  }
+}
+
+// ============ 7. ФУНКЦИИ-ХЕЛПЕРЫ ДЛЯ КЭШИРОВАНИЯ ==========
 
 function isCacheValid(cached, ttl) {
   return cached && (Date.now() - cached.time < ttl);
@@ -372,7 +332,7 @@ function setToCache(map, key, data, ttl, maxSize) {
   map.set(key, { data, time: Date.now() });
 }
 
-// ============ 9. ЕДИНЫЙ ПОИСК ПО ТАКСОНОМИЯМ ==========
+// ============ 8. ЕДИНЫЙ ПОИСК ПО ТАКСОНОМИЯМ ==========
 
 function findTagData(factsData, tags) {
   const taxonomies = ['us-gaap', 'ifrs-full', 'srt'];
@@ -396,7 +356,7 @@ function findTagData(factsData, tags) {
   return null;
 }
 
-// ============ 10. ФУНКЦИИ ДЛЯ РАБОТЫ С МЕТРИКАМИ ==========
+// ============ 9. ФУНКЦИИ ДЛЯ РАБОТЫ С МЕТРИКАМИ ==========
 
 function getMetricValuesArray(factsData, tagOrAlias) {
   const catalog = METRICS_CATALOG[tagOrAlias];
@@ -468,40 +428,6 @@ function collectAllTagValues(factsData, tags) {
   return result;
 }
 
-function collectMetricValues(factsData, metricName) {
-  const catalog = METRICS_CATALOG[metricName];
-  if (!catalog) {
-    log(`collectMetricValues: метрика ${metricName} не найдена в каталоге`);
-    return null;
-  }
-  
-  let values = getMetricValuesArray(factsData, metricName);
-  
-  if ((!values || values.length === 0) && catalog.compute && catalog.compute.length > 0) {
-    log(`collectMetricValues: прямой тег не найден, переходим к compute-тегам`);
-    const filingsMap = new Map();
-    for (const computeTag of catalog.compute) {
-      const tagValues = getMetricValuesArray(factsData, computeTag);
-      if (tagValues && tagValues.length > 0) {
-        for (const v of tagValues) {
-          const key = [
-            v.fy || '',
-            v.fp || '',
-            v.form || '',
-            v.end || '',
-            v.start || '',
-            v.filed || ''
-          ].join('|');
-          if (!filingsMap.has(key)) filingsMap.set(key, v);
-        }
-      }
-    }
-    values = filingsMap.size > 0 ? Array.from(filingsMap.values()) : null;
-  }
-  
-  return values;
-}
-
 function getValueFromTag(tagData, metricName, year, quarterParam, isBalanceMetric, ticker, factsData) {
   const catalog = METRICS_CATALOG[metricName];
   if (!catalog) {
@@ -529,7 +455,7 @@ function getValueFromTag(tagData, metricName, year, quarterParam, isBalanceMetri
     sortedValues = sortByStartDesc(values);
   }
   
-  // Годовой отчёт (включая 4q, q4)
+  // Годовой отчёт (включая 4q)
   if (year !== undefined && (quarterParam === undefined || quarterParam === 0 || quarterParam === 'annual' || quarterParam === 'год' || quarterParam === '4q')) {
     let annual = null;
     for (const v of sortedValues) {
@@ -922,7 +848,7 @@ function getMetricValue(factsData, metric, year, quarterParam, scale, ticker) {
   return value !== null ? applyScale(value, scale) : null;
 }
 
-// ============ 11. FETCH С RETRY ==========
+// ============ 10. FETCH С RETRY ==========
 
 async function fetchWithRetry(url, options, maxRetries = 3) {
   for (let i = 0; i < maxRetries; i++) {
@@ -946,6 +872,80 @@ async function fetchWithRetry(url, options, maxRetries = 3) {
       await new Promise(r => setTimeout(r, 1000));
     }
   }
+}
+
+// ============ 11. ФУНКЦИИ ДЛЯ SEC API (ОБЩИЕ) ==========
+
+async function getCIK(ticker) {
+  log(`getCIK: поиск CIK для тикера ${ticker}`);
+  
+  if (CACHE_CONFIG.cikCache.enabled) {
+    const cached = getFromCache(cikCache, ticker, CACHE_CONFIG.cikCache.ttl);
+    if (cached !== null) {
+      log(`getCIK: кэш HIT для ${ticker} -> ${cached}`);
+      return cached;
+    }
+  }
+  
+  let cik = null;
+  if (tickersCache && isCacheValid({ time: tickersCacheTime }, CACHE_CONFIG.tickersCache.ttl)) {
+    log(`getCIK: tickersCache HIT`);
+  } else {
+    log(`getCIK: tickersCache MISS, загружаем company_tickers.json`);
+    const response = await fetchWithRetry(`${SEC_BASE}/files/company_tickers.json`, {
+      headers: { 'User-Agent': USER_AGENT }
+    });
+    tickersCache = await response.json();
+    tickersCacheTime = Date.now();
+    log(`getCIK: tickersCache обновлён, записей: ${Object.keys(tickersCache).length}`);
+  }
+  
+  const upperTicker = ticker.toUpperCase();
+  const entry = Object.values(tickersCache).find(t => t.ticker === upperTicker);
+  if (!entry) {
+    log(`getCIK: тикер ${ticker} не найден`);
+    return null;
+  }
+  
+  cik = entry.cik_str.toString().padStart(10, '0');
+  log(`getCIK: найден CIK = ${cik}`);
+  
+  if (CACHE_CONFIG.cikCache.enabled && cik) {
+    setToCache(cikCache, ticker, cik, CACHE_CONFIG.cikCache.ttl, CACHE_CONFIG.cikCache.maxSize);
+  }
+  
+  return cik;
+}
+
+async function getCompanyFacts(cik) {
+  log(`getCompanyFacts: загрузка companyfacts для CIK ${cik}`);
+  
+  if (CACHE_CONFIG.factsCache.enabled) {
+    const cached = getFromCache(factsCache, cik, CACHE_CONFIG.factsCache.ttl);
+    if (cached !== null) {
+      log(`getCompanyFacts: кэш HIT для ${cik}`);
+      return cached;
+    }
+    log(`getCompanyFacts: кэш EXPIRED или MISS для ${cik}`);
+  }
+  
+  const url = `${DATA_BASE}/api/xbrl/companyfacts/CIK${cik}.json`;
+  const response = await fetchWithRetry(url, {
+    headers: { 'User-Agent': USER_AGENT }
+  });
+  if (!response.ok) {
+    log(`getCompanyFacts: ошибка загрузки, status=${response.status}`);
+    return null;
+  }
+  
+  const data = await response.json();
+  
+  if (CACHE_CONFIG.factsCache.enabled) {
+    setToCache(factsCache, cik, data, CACHE_CONFIG.factsCache.ttl, CACHE_CONFIG.factsCache.maxSize);
+  }
+  
+  log(`getCompanyFacts: загружено и закэшировано`);
+  return data;
 }
 
 // ============ 12. ОСНОВНЫЕ ФУНКЦИИ (ХЭНДЛЕРЫ ДЛЯ ЭНДПОИНТОВ) ==========
@@ -1064,85 +1064,10 @@ async function validateMetric(req, res) {
   }
 }
 
-// ============ 13. ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ДЛЯ SEC API (ОБЩИЕ) ==========
-
-async function getCIK(ticker) {
-  log(`getCIK: поиск CIK для тикера ${ticker}`);
-  
-  if (CACHE_CONFIG.cikCache.enabled) {
-    const cached = getFromCache(cikCache, ticker, CACHE_CONFIG.cikCache.ttl);
-    if (cached !== null) {
-      log(`getCIK: кэш HIT для ${ticker} -> ${cached}`);
-      return cached;
-    }
-  }
-  
-  let cik = null;
-  if (tickersCache && isCacheValid({ time: tickersCacheTime }, CACHE_CONFIG.tickersCache.ttl)) {
-    log(`getCIK: tickersCache HIT`);
-  } else {
-    log(`getCIK: tickersCache MISS, загружаем company_tickers.json`);
-    const response = await fetchWithRetry(`${SEC_BASE}/files/company_tickers.json`, {
-      headers: { 'User-Agent': USER_AGENT }
-    });
-    tickersCache = await response.json();
-    tickersCacheTime = Date.now();
-  }
-  
-  const upperTicker = ticker.toUpperCase();
-  const entry = Object.values(tickersCache).find(t => t.ticker === upperTicker);
-  if (!entry) {
-    log(`getCIK: тикер ${ticker} не найден`);
-    return null;
-  }
-  
-  cik = entry.cik_str.toString().padStart(10, '0');
-  log(`getCIK: найден CIK = ${cik}`);
-  
-  if (CACHE_CONFIG.cikCache.enabled && cik) {
-    setToCache(cikCache, ticker, cik, CACHE_CONFIG.cikCache.ttl, CACHE_CONFIG.cikCache.maxSize);
-  }
-  
-  return cik;
-}
-
-async function getCompanyFacts(cik) {
-  log(`getCompanyFacts: загрузка companyfacts для CIK ${cik}`);
-  
-  if (CACHE_CONFIG.factsCache.enabled) {
-    const cached = getFromCache(factsCache, cik, CACHE_CONFIG.factsCache.ttl);
-    if (cached !== null) {
-      log(`getCompanyFacts: кэш HIT для ${cik}`);
-      return cached;
-    }
-    log(`getCompanyFacts: кэш EXPIRED или MISS для ${cik}`);
-  }
-  
-  const url = `${DATA_BASE}/api/xbrl/companyfacts/CIK${cik}.json`;
-  const response = await fetchWithRetry(url, {
-    headers: { 'User-Agent': USER_AGENT }
-  });
-  if (!response.ok) {
-    log(`getCompanyFacts: ошибка загрузки, status=${response.status}`);
-    return null;
-  }
-  
-  const data = await response.json();
-  
-  if (CACHE_CONFIG.factsCache.enabled) {
-    setToCache(factsCache, cik, data, CACHE_CONFIG.factsCache.ttl, CACHE_CONFIG.factsCache.maxSize);
-  }
-  
-  log(`getCompanyFacts: загружено и закэшировано`);
-  return data;
-}
-
-// ============ 14. ЭКСПОРТ ФУНКЦИЙ ==========
+// ============ 13. ЭКСПОРТ ФУНКЦИЙ ==========
 
 module.exports = {
   getMetric,
   getCatalog,
-  validateMetric,
-  getCIK,
-  getCompanyFacts
+  validateMetric
 };
