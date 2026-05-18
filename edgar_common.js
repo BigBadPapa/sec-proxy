@@ -1,4 +1,4 @@
-// ============ EDGAR_COMMON.JS - ОБЩИЕ УТИЛИТЫ ДЛЯ ВСЕХ МОДУЛЕЙ ===========
+// ============ EDGAR_COMMON.JS - ОБЩИЕ УТИЛИТЫ ДЛЯ ВСЕХ МОДУЛЕЙ ==========
 // Содержит функции, используемые metrics, info и будущими модулями (ratios, reports)
 
 const fetch = require('node-fetch');
@@ -137,7 +137,29 @@ function applyScale(value, scale) {
   }
 }
 
-// ============ 4. ФУНКЦИИ ДЛЯ КЭШИРОВАНИЯ ==========
+// ============ 4. НОВЫЕ ФУНКЦИИ (ПЕРЕНОС ИЗ GAS) ==========
+
+function normalizeQuarter(value) {
+  if (value === undefined || value === null) return undefined;
+  const str = String(value).toLowerCase().trim();
+  if (str === 'год' || str === 'годовой' || str === 'fy') return 'annual';
+  if (str === 'q1') return 'q1';
+  if (str === 'q2') return 'q2';
+  if (str === 'q3') return 'q3';
+  if (str === 'q4') return 'q4';
+  if (str === '1q') return '1q';
+  if (str === '2q') return '2q';
+  if (str === '3q') return '3q';
+  if (str === '4q') return '4q';
+  return undefined;
+}
+
+function normalizeTicker(ticker) {
+  if (!ticker) return null;
+  return String(ticker).toUpperCase().trim().replace(/\./g, '-');
+}
+
+// ============ 5. ФУНКЦИИ ДЛЯ КЭШИРОВАНИЯ ==========
 
 function isCacheValid(cached, ttl) {
   return cached && (Date.now() - cached.time < ttl);
@@ -159,7 +181,7 @@ function setToCache(map, key, data, ttl, maxSize) {
   map.set(key, { data, time: Date.now() });
 }
 
-// ============ 5. HTTP С РЕТРАЯМИ ==========
+// ============ 6. HTTP С РЕТРАЯМИ ==========
 
 async function fetchWithRetry(url, options, maxRetries = 3) {
   for (let i = 0; i < maxRetries; i++) {
@@ -185,7 +207,7 @@ async function fetchWithRetry(url, options, maxRetries = 3) {
   }
 }
 
-// ============ 6. ФУНКЦИИ ДЛЯ SEC API ==========
+// ============ 7. ФУНКЦИИ ДЛЯ SEC API ==========
 
 async function getCIK(ticker) {
   log(`getCIK: поиск CIK для тикера ${ticker}`);
@@ -279,7 +301,7 @@ async function getSubmissionsData(cik) {
   return data;
 }
 
-// ============ 7. ХЕНДЛЕРЫ ДЛЯ УПРАВЛЕНИЯ КЭШЕМ ==========
+// ============ 8. ХЕНДЛЕРЫ ДЛЯ УПРАВЛЕНИЯ КЭШЕМ ==========
 
 async function getCacheStatus(req, res) {
   log('GET /cache-status');
@@ -312,7 +334,7 @@ async function clearCache(req, res) {
   res.json({ message: `Кэш ${key} очищен` });
 }
 
-// ============ 8. ЭКСПОРТ ==========
+// ============ 9. ЭКСПОРТ ==========
 
 module.exports = {
   // Константы
@@ -342,6 +364,10 @@ module.exports = {
   parseQuarterStringCached,
   normalizeScale,
   applyScale,
+  
+  // Новые утилиты (из GAS)
+  normalizeQuarter,
+  normalizeTicker,
   
   // Кэш-утилиты
   isCacheValid,
