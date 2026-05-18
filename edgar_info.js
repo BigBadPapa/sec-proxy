@@ -73,7 +73,6 @@ async function getInfo(req, res) {
       fiscalYearEnd: subData.fiscalYearEnd || null,
       phone: subData.phone || null,
       website: subData.website || null,
-      investorWebsite: subData.investorWebsite || null,
       businessAddress: subData.addresses?.business || null,
       mailingAddress: subData.addresses?.mailing || null,
       formerNames: subData.formerNames || [],
