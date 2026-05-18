@@ -196,8 +196,8 @@ router.get('/version', (req, res) => {
   res.json({ version: '1.0.0', name: 'SEC Proxy' });
 });
 
-router.get('/cache-status', infoLogic.getCacheStatus);
-
-router.post('/clear-cache', infoLogic.clearCache);
+const common = require('./edgar_common');
+router.get('/cache-status', common.getCacheStatus);
+router.post('/clear-cache', common.clearCache);
 
 module.exports = router;
