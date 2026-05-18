@@ -1,16 +1,11 @@
 // ============ EDGAR_METRICS.JS - ЛОГИКА ДЛЯ /METRICS ЭНДПОИНТОВ ==========
-// Этот файл содержит ТОЛЬКО логику, без эндпоинтов
-// Эндпоинты вынесены в endpoints.js
+// Этот файл содержит ТОЛЬКО логику метрик, без дублирования общих утилит
 
-const fetch = require('node-fetch');
+const common = require('./edgar_common');
 
-// ============ 1. КОНСТАНТЫ ==========
+// ============ 1. КОНСТАНТЫ (СПЕЦИФИЧНЫЕ ДЛЯ МЕТРИК) ==========
 
-const USER_AGENT = 'GoogleSheetsSEC contact@example.com';
-const SEC_BASE = 'https://www.sec.gov';
-const DATA_BASE = 'https://data.sec.gov';
-
-// Константы для длительности кварталов (в днях)
+// Константы для длительности кварталов (в днях) - эвристика для metrics
 const QUARTER_DAYS = {
   1: { min: 60, max: 120 },   // Q1: 3 месяца
   2: { min: 150, max: 210 },  // Q2: 6 месяцев (YTD)
@@ -18,48 +13,13 @@ const QUARTER_DAYS = {
   4: { min: 350, max: 370 }   // Q4: 12 месяцев
 };
 
-// ============ 2. НАСТРОЙКИ КЭШЕЙ ==========
-const CACHE_CONFIG = {
-  // Кэш для тикеров (company_tickers.json)
-  // TTL: 24 часа, размер: 1 запись
-  tickersCache: { enabled: true, ttl: 24 * 60 * 60 * 1000, maxSize: 1 },
-  // Кэш для CIK по тикеру
-  // TTL: 24 часа, размер: 500 записей
-  cikCache: { enabled: true, ttl: 24 * 60 * 60 * 1000, maxSize: 500 },
-  // Кэш для companyfacts (финансовые данные XBRL)
-  // TTL: 6 часов, размер: 20 записей
-  factsCache: { enabled: true, ttl: 6 * 60 * 60 * 1000, maxSize: 20 },
-  // Кэш для результатов метрик
-  // TTL: 5 минут, размер: 1000 записей
-  metricsCache: { enabled: true, ttl: 5 * 60 * 1000, maxSize: 1000 },
-  // Кэш для submissions (метаданные компании)
-  // TTL: 24 часа, размер: 20 записей
-  submissionsCache: { enabled: true, ttl: 24 * 60 * 60 * 1000, maxSize: 20 },
-  // Кэш для разбора строки квартала
-  // TTL: бесконечный, размер: 50 записей
-  quarterParseCache: { enabled: true, ttl: Infinity, maxSize: 50 },
-  // Кэш для вычисления длительности (пока отключён)
-  durationCache: { enabled: false, ttl: Infinity, maxSize: 1000 },
-  // Кэш для collectAllTagValues (отключён)
-  collectAllTagValuesCache: { enabled: false, ttl: 6 * 60 * 60 * 1000, maxSize: 50 },
-  // Кэш для getMetricValuesArray (отключён)
-  getMetricValuesArrayCache: { enabled: false, ttl: 6 * 60 * 60 * 1000, maxSize: 200 }
-};
+// ============ 2. ПЕРЕМЕННЫЕ КЭШЕЙ (СПЕЦИФИЧНЫЕ ДЛЯ МЕТРИК) ==========
+// Используем общие кэши из common, но добавляем специфичные для metrics
+const durationCache = new Map();      // Кэш для разницы в днях
+const collectAllTagValuesCache = new Map();  // Кэш для collectAllTagValues
+const getMetricValuesArrayCache = new Map(); // Кэш для getMetricValuesArray
 
-// ============ 3. ПЕРЕМЕННЫЕ КЭШЕЙ ==========
-let tickersCache = null;
-let tickersCacheTime = 0;
-
-const cikCache = new Map();
-const factsCache = new Map();
-const metricsCache = new Map();
-const submissionsCache = new Map();
-const quarterParseCache = new Map();
-const durationCache = new Map();
-const collectAllTagValuesCache = new Map();
-const getMetricValuesArrayCache = new Map();
-
-// ============ 4. ПОЛНЫЙ СПРАВОЧНИК МЕТРИК ==========
+// ============ 3. ПОЛНЫЙ СПРАВОЧНИК МЕТРИК ==========
 const METRICS_CATALOG = {
   // P&L
   revenue: { tags: ['Revenues', 'RevenueFromContractWithCustomerExcludingAssessedTax', 'RevenueFromContractWithCustomerIncludingAssessedTax', 'RevenuesNetOfInterestExpense', 'RegulatedAndUnregulatedOperatingRevenue', 'RegulatedOperatingRevenue', 'InvestmentBankingRevenue', 'GrossInvestmentIncomeOperating'], compute: ['InterestIncomeExpenseNet', 'NoninterestIncome'], operation: 'sum', category: 'P&L', ttm: 'sum', ru: 'Выручка' },
@@ -159,7 +119,7 @@ const METRICS_CATALOG = {
   dividendspershare: { tags: ['CommonStockDividendsPerShareDeclared', 'DividendsPerShare'], category: 'PerShare', ttm: 'sum', ru: 'DPS' }
 };
 
-// ============ 5. РУССКИЕ АЛИАСЫ ==========
+// ============ 4. РУССКИЕ АЛИАСЫ ==========
 const RU_ALIASES = {
   выручка: 'revenue',
   себестоимость: 'cogs',
@@ -178,102 +138,11 @@ const RU_ALIASES = {
   амортизация: 'da'
 };
 
-// ============ 6. ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ==========
-
-function log(message, data = null) {
-  const timestamp = new Date().toISOString();
-  if (data) {
-    console.log(`[${timestamp}] ${message}`, data);
-  } else {
-    console.log(`[${timestamp}] ${message}`);
-  }
-}
-
-function safeDateValue(dateStr) {
-  if (!dateStr) return 0;
-  const t = new Date(dateStr).getTime();
-  return isNaN(t) ? 0 : t;
-}
-
-function sortByEndDesc(values) {
-  return [...values].sort((a, b) => {
-    const endA = safeDateValue(a.end);
-    const endB = safeDateValue(b.end);
-    return endB - endA;
-  });
-}
-
-function sortByStartDesc(values) {
-  return [...values].sort((a, b) => {
-    const startA = safeDateValue(a.start);
-    const startB = safeDateValue(b.start);
-    return startB - startA;
-  });
-}
-
-function filterReportsWithFiled(values) {
-  const reportForms = ['10-K', '10-Q', '20-F', '40-F', '6-K'];
-  return values.filter(v => reportForms.includes(v.form) && v.filed);
-}
-
-function findAnnualReport(values, year) {
-  const forms = ['10-K', '20-F', '40-F'];
-  for (const form of forms) {
-    const report = values.find(v => v.fy === year && v.form === form);
-    if (report) return report;
-  }
-  return null;
-}
-
-function findQuarterlyReport(values, year, fp, forms = ['10-Q', '6-K']) {
-  for (const form of forms) {
-    const report = values.find(v => v.form === form && v.fy === year && v.fp === fp);
-    if (report) return report;
-  }
-  return null;
-}
+// ============ 5. СПЕЦИФИЧНЫЕ ДЛЯ МЕТРИК УТИЛИТЫ ==========
 
 function getDaysDifference(start, end) {
-  if (!CACHE_CONFIG.durationCache.enabled) {
-    return (new Date(end) - new Date(start)) / (1000 * 60 * 60 * 24);
-  }
-  
-  const key = `${start}|${end}`;
-  const cached = durationCache.get(key);
-  if (cached) return cached;
-  
-  const days = (new Date(end) - new Date(start)) / (1000 * 60 * 60 * 24);
-  if (durationCache.size < CACHE_CONFIG.durationCache.maxSize) {
-    durationCache.set(key, days);
-  }
-  return days;
-}
-
-function parseQuarterStringCached(quarterStr) {
-  if (!quarterStr || typeof quarterStr !== 'string') return null;
-  
-  if (CACHE_CONFIG.quarterParseCache.enabled) {
-    const cached = quarterParseCache.get(quarterStr);
-    if (cached) return cached;
-  }
-  
-  const lower = quarterStr.toLowerCase().trim();
-  let result = null;
-  
-  if (lower === 'q1') result = { type: 'quarter', num: 1 };
-  else if (lower === 'q2') result = { type: 'quarter', num: 2 };
-  else if (lower === 'q3') result = { type: 'quarter', num: 3 };
-  else if (lower === 'q4') result = { type: 'quarter', num: 4 };
-  else if (lower === '1q') result = { type: 'ytd', num: 1 };
-  else if (lower === '2q') result = { type: 'ytd', num: 2 };
-  else if (lower === '3q') result = { type: 'ytd', num: 3 };
-  else if (lower === '4q') result = { type: 'ytd', num: 4 };
-  
-  if (result && CACHE_CONFIG.quarterParseCache.enabled && quarterParseCache.size < CACHE_CONFIG.quarterParseCache.maxSize) {
-    quarterParseCache.set(quarterStr, result);
-  }
-  
-  return result;
+  // Отключённый кэш пока не используем, оставляем как было
+  return (new Date(end) - new Date(start)) / (1000 * 60 * 60 * 24);
 }
 
 function resolveMetric(alias) {
@@ -290,55 +159,11 @@ function resolveMetric(alias) {
   return null;
 }
 
-function normalizeScale(scale) {
-  if (!scale) return null;
-  const str = String(scale).toLowerCase().trim();
-  if (str === 'k' || str === 'т' || str === 'тысячи') return 'k';
-  if (str === 'kk' || str === 'м' || str === 'миллионы') return 'kk';
-  if (str === 'kkk' || str === 'млрд' || str === 'миллиарды') return 'kkk';
-  return null;
-}
-
-function applyScale(value, scale) {
-  if (value === null || value === undefined) return null;
-  if (!scale) return value;
-  switch (scale) {
-    case 'k': return value / 1000;
-    case 'kk': return value / 1000000;
-    case 'kkk': return value / 1000000000;
-    default: return value;
-  }
-}
-
-// ============ 7. ФУНКЦИИ-ХЕЛПЕРЫ ДЛЯ КЭШИРОВАНИЯ ==========
-
-function isCacheValid(cached, ttl) {
-  return cached && (Date.now() - cached.time < ttl);
-}
-
-function getFromCache(map, key, ttl) {
-  if (!map.has(key)) return null;
-  const cached = map.get(key);
-  if (isCacheValid(cached, ttl)) return cached.data;
-  map.delete(key);
-  return null;
-}
-
-function setToCache(map, key, data, ttl, maxSize) {
-  if (map.size >= maxSize) {
-    const oldest = map.keys().next().value;
-    map.delete(oldest);
-  }
-  map.set(key, { data, time: Date.now() });
-}
-
-// ============ 8. ЕДИНЫЙ ПОИСК ПО ТАКСОНОМИЯМ ==========
-
 function findTagData(factsData, tags) {
   const taxonomies = ['us-gaap', 'ifrs-full', 'srt'];
   const facts = factsData?.facts;
   if (!facts) {
-    log('findTagData: factsData.facts отсутствует');
+    common.log('findTagData: factsData.facts отсутствует');
     return null;
   }
 
@@ -347,29 +172,29 @@ function findTagData(factsData, tags) {
     if (!taxData) continue;
     for (const tag of tags) {
       if (taxData[tag]) {
-        log(`findTagData: найден тег ${tag} в таксономии ${taxonomy}`);
+        common.log(`findTagData: найден тег ${tag} в таксономии ${taxonomy}`);
         return { taxonomy, tag, data: taxData[tag] };
       }
     }
   }
-  log(`findTagData: теги ${tags.join(', ')} не найдены ни в одной таксономии`);
+  common.log(`findTagData: теги ${tags.join(', ')} не найдены ни в одной таксономии`);
   return null;
 }
 
-// ============ 9. ФУНКЦИИ ДЛЯ РАБОТЫ С МЕТРИКАМИ ==========
+// ============ 6. ФУНКЦИИ ДЛЯ РАБОТЫ С МЕТРИКАМИ ==========
 
 function getMetricValuesArray(factsData, tagOrAlias) {
   const catalog = METRICS_CATALOG[tagOrAlias];
   const facts = factsData?.facts;
   if (!facts) {
-    log('getMetricValuesArray: factsData.facts отсутствует');
+    common.log('getMetricValuesArray: factsData.facts отсутствует');
     return null;
   }
   
   if (catalog) {
     const found = findTagData(factsData, catalog.tags);
     if (!found) {
-      log(`getMetricValuesArray: теги для алиаса ${tagOrAlias} не найдены`);
+      common.log(`getMetricValuesArray: теги для алиаса ${tagOrAlias} не найдены`);
       return null;
     }
     
@@ -378,13 +203,13 @@ function getMetricValuesArray(factsData, tagOrAlias) {
                     Object.keys(units).find(k => k.includes('shares')) ||
                     Object.keys(units).find(k => k.includes('pure')) ||
                     Object.keys(units)[0];
-    log(`getMetricValuesArray: для ${tagOrAlias} найдено ${units[unitKey]?.length || 0} значений`);
+    common.log(`getMetricValuesArray: для ${tagOrAlias} найдено ${units[unitKey]?.length || 0} значений`);
     return units[unitKey] || null;
   }
   
   const found = findTagData(factsData, [tagOrAlias]);
   if (!found) {
-    log(`getMetricValuesArray: прямой тег ${tagOrAlias} не найден`);
+    common.log(`getMetricValuesArray: прямой тег ${tagOrAlias} не найден`);
     return null;
   }
   
@@ -393,12 +218,12 @@ function getMetricValuesArray(factsData, tagOrAlias) {
                   Object.keys(units).find(k => k.includes('shares')) ||
                   Object.keys(units).find(k => k.includes('pure')) ||
                   Object.keys(units)[0];
-  log(`getMetricValuesArray: для тега ${tagOrAlias} найдено ${units[unitKey]?.length || 0} значений`);
+  common.log(`getMetricValuesArray: для тега ${tagOrAlias} найдено ${units[unitKey]?.length || 0} значений`);
   return units[unitKey] || null;
 }
 
 function collectAllTagValues(factsData, tags) {
-  log(`collectAllTagValues: начинаем сбор для тегов [${tags.join(', ')}]`);
+  common.log(`collectAllTagValues: начинаем сбор для тегов [${tags.join(', ')}]`);
   const allValues = [];
   
   for (const tag of tags) {
@@ -409,7 +234,7 @@ function collectAllTagValues(factsData, tags) {
     const unitKey = Object.keys(units).find(k => k.includes('USD')) || Object.keys(units)[0];
     const values = units[unitKey];
     if (values && values.length > 0) {
-      log(`collectAllTagValues: из тега ${tag} добавлено ${values.length} значений`);
+      common.log(`collectAllTagValues: из тега ${tag} добавлено ${values.length} значений`);
       allValues.push(...values);
     }
   }
@@ -418,20 +243,20 @@ function collectAllTagValues(factsData, tags) {
   for (const v of allValues) {
     const key = `${v.fy || ''}|${v.fp || ''}|${v.form || ''}|${v.end || ''}|${v.start || ''}|${v.filed || ''}`;
     const existing = unique.get(key);
-    if (!existing || safeDateValue(v.filed) > safeDateValue(existing.filed)) {
+    if (!existing || common.safeDateValue(v.filed) > common.safeDateValue(existing.filed)) {
       unique.set(key, v);
     }
   }
   
   const result = Array.from(unique.values());
-  log(`collectAllTagValues: после дедупликации осталось ${result.length} значений`);
+  common.log(`collectAllTagValues: после дедупликации осталось ${result.length} значений`);
   return result;
 }
 
 function getValueFromTag(tagData, metricName, year, quarterParam, isBalanceMetric, ticker, factsData) {
   const catalog = METRICS_CATALOG[metricName];
   if (!catalog) {
-    log(`getValueFromTag: метрика ${metricName} не найдена`);
+    common.log(`getValueFromTag: метрика ${metricName} не найдена`);
     return null;
   }
   
@@ -442,7 +267,7 @@ function getValueFromTag(tagData, metricName, year, quarterParam, isBalanceMetri
                   Object.keys(units)[0];
   const values = units[unitKey];
   if (!values || values.length === 0) {
-    log(`getValueFromTag: нет значений для метрики ${metricName}`);
+    common.log(`getValueFromTag: нет значений для метрики ${metricName}`);
     return null;
   }
   
@@ -450,9 +275,9 @@ function getValueFromTag(tagData, metricName, year, quarterParam, isBalanceMetri
   
   let sortedValues;
   if (isBalanceMetric) {
-    sortedValues = sortByEndDesc(values);
+    sortedValues = common.sortByEndDesc(values);
   } else {
-    sortedValues = sortByStartDesc(values);
+    sortedValues = common.sortByStartDesc(values);
   }
   
   // Годовой отчёт (включая 4q)
@@ -468,31 +293,31 @@ function getValueFromTag(tagData, metricName, year, quarterParam, isBalanceMetri
     }
   
     if (annual) {
-      log(`getValueFromTag: найден годовой отчёт за ${year}: ${annual.val}`);
+      common.log(`getValueFromTag: найден годовой отчёт за ${year}: ${annual.val}`);
       result = annual.val;
     } else {
-      log(`getValueFromTag: годовой отчёт за ${year} не найден`);
+      common.log(`getValueFromTag: годовой отчёт за ${year} не найден`);
     }
   }
   
   // Квартальные данные
   else if (year !== undefined && quarterParam) {
-    const quarterInfo = parseQuarterStringCached(quarterParam);
+    const quarterInfo = common.parseQuarterStringCached(quarterParam);
     if (!quarterInfo) {
-      log(`getValueFromTag: не удалось распарсить quarterParam=${quarterParam}`);
+      common.log(`getValueFromTag: не удалось распарсить quarterParam=${quarterParam}`);
       return null;
     }
     
     if (isBalanceMetric) {
       const targetFp = `Q${quarterInfo.num}`;
       if (quarterInfo.num === 4) {
-        const annual = findAnnualReport(sortedValues, year);
+        const annual = common.findAnnualReport(sortedValues, year);
         result = annual?.val || null;
-        log(`getValueFromTag: баланс Q4 -> годовой отчёт: ${result}`);
+        common.log(`getValueFromTag: баланс Q4 -> годовой отчёт: ${result}`);
       } else {
-        const balanceValue = findQuarterlyReport(sortedValues, year, targetFp);
+        const balanceValue = common.findQuarterlyReport(sortedValues, year, targetFp);
         result = balanceValue?.val || null;
-        log(`getValueFromTag: баланс ${targetFp}: ${result}`);
+        common.log(`getValueFromTag: баланс ${targetFp}: ${result}`);
       }
     }
     else {
@@ -521,19 +346,19 @@ function getValueFromTag(tagData, metricName, year, quarterParam, isBalanceMetri
             return days >= QUARTER_DAYS[quarterInfo.num].min && days <= QUARTER_DAYS[quarterInfo.num].max;
           });
           const prevFp = `Q${quarterInfo.num - 1}`;
-          const ytdPrev = findQuarterlyReport(sortedValues, year, prevFp);
+          const ytdPrev = common.findQuarterlyReport(sortedValues, year, prevFp);
           
           if (ytdCurrent && ytdPrev) {
             quarterValue = { val: ytdCurrent.val - ytdPrev.val };
-            log(`getValueFromTag: вычислен ${targetFp} через YTD: ${ytdCurrent.val} - ${ytdPrev.val} = ${quarterValue.val}`);
+            common.log(`getValueFromTag: вычислен ${targetFp} через YTD: ${ytdCurrent.val} - ${ytdPrev.val} = ${quarterValue.val}`);
           } else if (ytdCurrent) {
             quarterValue = ytdCurrent;
-            log(`getValueFromTag: взят YTD ${targetFp} как есть: ${quarterValue.val}`);
+            common.log(`getValueFromTag: взят YTD ${targetFp} как есть: ${quarterValue.val}`);
           }
         }
         
         result = quarterValue?.val || null;
-        log(`getValueFromTag: ${quarterParam} -> ${result}`);
+        common.log(`getValueFromTag: ${quarterParam} -> ${result}`);
       }
       else if (quarterInfo.type === 'ytd') {
         let ytdValue = null;
@@ -572,7 +397,7 @@ function getValueFromTag(tagData, metricName, year, quarterParam, isBalanceMetri
         }
         
         result = ytdValue?.val || null;
-        log(`getValueFromTag: ${quarterParam} (YTD) -> ${result}`);
+        common.log(`getValueFromTag: ${quarterParam} (YTD) -> ${result}`);
       }
     }
   }
@@ -584,41 +409,41 @@ function searchValueInAllTags(factsData, catalog, year, quarterParam, isBalanceM
   const tags = catalog.tags;
   const isQuarterRequest = quarterParam !== undefined && quarterParam !== null && quarterParam !== 'annual' && quarterParam !== 'год';
   
-  log(`searchValueInAllTags: start, year=${year}, quarterParam=${quarterParam}, isBalance=${isBalanceMetric}`);
+  common.log(`searchValueInAllTags: start, year=${year}, quarterParam=${quarterParam}, isBalance=${isBalanceMetric}`);
   
   if (quarterParam === '4q' || quarterParam === 'q4') {
-    log(`searchValueInAllTags: пропускаем ${quarterParam}`);
+    common.log(`searchValueInAllTags: пропускаем ${quarterParam}`);
     return null;
   }
   
   for (const tag of tags) {
-    log(`searchValueInAllTags: проверяем тег ${tag}`);
+    common.log(`searchValueInAllTags: проверяем тег ${tag}`);
     
     const tagData = findTagData(factsData, [tag]);
     if (!tagData) {
-      log(`searchValueInAllTags: тег ${tag} не найден в данных`);
+      common.log(`searchValueInAllTags: тег ${tag} не найден в данных`);
       continue;
     }
     
     const values = getMetricValuesArray(factsData, tag);
     if (!values || values.length === 0) {
-      log(`searchValueInAllTags: тег ${tag} не содержит значений`);
+      common.log(`searchValueInAllTags: тег ${tag} не содержит значений`);
       continue;
     }
     
     const hasYearData = values.some(v => v.fy === year);
     if (!hasYearData) {
-      log(`searchValueInAllTags: тег ${tag} не содержит данных за год ${year}`);
+      common.log(`searchValueInAllTags: тег ${tag} не содержит данных за год ${year}`);
       continue;
     }
     
     if (isQuarterRequest && quarterParam !== 'q4' && quarterParam !== '4q') {
-      const quarterInfo = parseQuarterStringCached(quarterParam);
+      const quarterInfo = common.parseQuarterStringCached(quarterParam);
       if (quarterInfo) {
         const targetFp = `Q${quarterInfo.num}`;
         const hasQuarterData = values.some(v => v.fy === year && v.fp === targetFp);
         if (!hasQuarterData) {
-          log(`searchValueInAllTags: тег ${tag} не содержит данных за ${targetFp} ${year}`);
+          common.log(`searchValueInAllTags: тег ${tag} не содержит данных за ${targetFp} ${year}`);
           continue;
         }
       }
@@ -626,21 +451,21 @@ function searchValueInAllTags(factsData, catalog, year, quarterParam, isBalanceM
     
     const result = getValueFromTag(tagData.data, catalog.alias || Object.keys(METRICS_CATALOG).find(k => METRICS_CATALOG[k] === catalog), year, quarterParam, isBalanceMetric, ticker, factsData);
     if (result !== null && result !== undefined) {
-      log(`searchValueInAllTags: найден результат в теге ${tag}: ${result}`);
+      common.log(`searchValueInAllTags: найден результат в теге ${tag}: ${result}`);
       return result;
     }
   }
   
   if (catalog.compute && catalog.compute.length > 0) {
-    log(`searchValueInAllTags: переходим к compute-тегам`);
+    common.log(`searchValueInAllTags: переходим к compute-тегам`);
     let sum = null;
     let validCount = 0;
     
     for (const computeTag of catalog.compute) {
-      log(`searchValueInAllTags: проверяем compute-тег ${computeTag}`);
+      common.log(`searchValueInAllTags: проверяем compute-тег ${computeTag}`);
       const computeFound = findTagData(factsData, [computeTag]);
       if (!computeFound) {
-        log(`searchValueInAllTags: compute-тег ${computeTag} не найден`);
+        common.log(`searchValueInAllTags: compute-тег ${computeTag} не найден`);
         continue;
       }
       
@@ -649,30 +474,30 @@ function searchValueInAllTags(factsData, catalog, year, quarterParam, isBalanceM
         if (catalog.operation === 'sum') {
           if (sum === null) sum = 0;
           sum += computeResult;
-          log(`searchValueInAllTags: добавлено ${computeResult}, сумма=${sum}`);
+          common.log(`searchValueInAllTags: добавлено ${computeResult}, сумма=${sum}`);
         } else if (catalog.operation === 'subtract') {
           if (sum === null) sum = computeResult;
           else sum -= computeResult;
-          log(`searchValueInAllTags: вычитание, результат=${sum}`);
+          common.log(`searchValueInAllTags: вычитание, результат=${sum}`);
         }
         validCount++;
       }
     }
     
     if (validCount > 0 && sum !== null) {
-      log(`searchValueInAllTags: результат compute: ${sum}`);
+      common.log(`searchValueInAllTags: результат compute: ${sum}`);
       return sum;
     }
   }
   
-  log(`searchValueInAllTags: результат не найден`);
+  common.log(`searchValueInAllTags: результат не найден`);
   return null;
 }
 
 function getMetricValueInternal(factsData, metric, year, quarterParam, scale, ticker) {
   const catalog = METRICS_CATALOG[metric];
   if (!catalog) {
-    log(`getMetricValueInternal: метрика ${metric} не найдена в каталоге`);
+    common.log(`getMetricValueInternal: метрика ${metric} не найдена в каталоге`);
     return null;
   }
   
@@ -682,19 +507,19 @@ function getMetricValueInternal(factsData, metric, year, quarterParam, scale, ti
   
   const isBalanceMetric = catalog.ttm === 'last';
   
-  log(`getMetricValueInternal: ticker=${ticker}, metric=${metric}, year=${year}, quarterParam=${quarterParam}, isBalance=${isBalanceMetric}`);
+  common.log(`getMetricValueInternal: ticker=${ticker}, metric=${metric}, year=${year}, quarterParam=${quarterParam}, isBalance=${isBalanceMetric}`);
   
   if (quarterParam === 'q4') {
     const annual = getMetricValueInternal(factsData, metric, year, '4q', null, ticker);
     const ytdQ3 = getMetricValueInternal(factsData, metric, year, '3q', null, ticker);
     const result = (annual !== null && ytdQ3 !== null) ? annual - ytdQ3 : null;
-    return result !== null ? applyScale(result, scale) : null;
+    return result !== null ? common.applyScale(result, scale) : null;
   }
   
   let result = searchValueInAllTags(factsData, catalog, year, quarterParam, isBalanceMetric, ticker);
   
   if ((result === null || result === undefined) && catalog.compute && catalog.compute.length > 0) {
-    log(`getMetricValueInternal: прямой поиск не дал результата, пробуем compute`);
+    common.log(`getMetricValueInternal: прямой поиск не дал результата, пробуем compute`);
     let sum = null;
     let validCount = 0;
     
@@ -717,24 +542,24 @@ function getMetricValueInternal(factsData, metric, year, quarterParam, scale, ti
     
     if (validCount > 0 && sum !== null) {
       result = sum;
-      log(`getMetricValueInternal: compute результат = ${result}`);
+      common.log(`getMetricValueInternal: compute результат = ${result}`);
     }
   }
   
-  log(`getMetricValueInternal: итоговый результат = ${result}`);
-  return result !== null ? applyScale(result, scale) : null;
+  common.log(`getMetricValueInternal: итоговый результат = ${result}`);
+  return result !== null ? common.applyScale(result, scale) : null;
 }
 
 function getTTMValue(factsData, metricName, scale, ticker) {
   const catalog = METRICS_CATALOG[metricName];
   const ttmType = catalog?.ttm || 'sum';
   
-  log(`getTTMValue: ticker=${ticker}, metric=${metricName}, ttmType=${ttmType}`);
+  common.log(`getTTMValue: ticker=${ticker}, metric=${metricName}, ttmType=${ttmType}`);
   
   let allTagValues = collectAllTagValues(factsData, catalog.tags);
   
   if ((!allTagValues || allTagValues.length === 0) && catalog.compute && catalog.compute.length > 0) {
-    log(`getTTMValue: нет прямых тегов, собираем compute-теги`);
+    common.log(`getTTMValue: нет прямых тегов, собираем compute-теги`);
     const valuesMap = new Map();
     for (const computeTag of catalog.compute) {
       const tagValues = getMetricValuesArray(factsData, computeTag);
@@ -749,36 +574,36 @@ function getTTMValue(factsData, metricName, scale, ticker) {
   }
   
   if (!allTagValues || allTagValues.length === 0) {
-    log(`getTTMValue: нет значений для метрики ${metricName}`);
+    common.log(`getTTMValue: нет значений для метрики ${metricName}`);
     return null;
   }
   
   if (ttmType === 'last') {
-    const sortedValues = sortByEndDesc(allTagValues);
+    const sortedValues = common.sortByEndDesc(allTagValues);
     const result = sortedValues[0]?.val;
-    log(`getTTMValue: баланс, последнее значение = ${result}`);
-    return applyScale(result, scale);
+    common.log(`getTTMValue: баланс, последнее значение = ${result}`);
+    return common.applyScale(result, scale);
   }
   
-  const allReports = filterReportsWithFiled(allTagValues);
+  const allReports = common.filterReportsWithFiled(allTagValues);
   if (allReports.length === 0) {
-    log(`getTTMValue: нет отчётов с filed`);
+    common.log(`getTTMValue: нет отчётов с filed`);
     return null;
   }
   
-  const sortedReports = sortByEndDesc(allReports);
+  const sortedReports = common.sortByEndDesc(allReports);
   const lastReport = sortedReports[0];
-  log(`getTTMValue: последний отчёт: form=${lastReport.form}, fy=${lastReport.fy}, fp=${lastReport.fp}, filed=${lastReport.filed}`);
+  common.log(`getTTMValue: последний отчёт: form=${lastReport.form}, fy=${lastReport.fy}, fp=${lastReport.fp}, filed=${lastReport.filed}`);
   
   if (lastReport.form === '10-K' || lastReport.form === '20-F' || lastReport.form === '40-F') {
     const annualValue = getMetricValueInternal(factsData, metricName, lastReport.fy, undefined, null, ticker);
-    log(`getTTMValue: годовой отчёт, значение = ${annualValue}`);
-    return applyScale(annualValue, scale);
+    common.log(`getTTMValue: годовой отчёт, значение = ${annualValue}`);
+    return common.applyScale(annualValue, scale);
   }
   
   const quarterMatch = lastReport.fp?.match(/^Q([1-4])$/);
   if (!quarterMatch) {
-    log(`getTTMValue: не удалось определить квартал из fp=${lastReport.fp}`);
+    common.log(`getTTMValue: не удалось определить квартал из fp=${lastReport.fp}`);
     return null;
   }
   
@@ -795,7 +620,7 @@ function getTTMValue(factsData, metricName, scale, ticker) {
     }
     quarters.push({ year, quarterNum });
   }
-  log(`getTTMValue: собираем кварталы: ${JSON.stringify(quarters)}`);
+  common.log(`getTTMValue: собираем кварталы: ${JSON.stringify(quarters)}`);
   
   let sum = 0;
   let validCount = 0;
@@ -803,7 +628,7 @@ function getTTMValue(factsData, metricName, scale, ticker) {
   for (const q of quarters) {
     const quarterParam = `q${q.quarterNum}`;
     const value = getMetricValueInternal(factsData, metricName, q.year, quarterParam, null, ticker);
-    log(`getTTMValue: квартал ${q.year} Q${q.quarterNum} = ${value}`);
+    common.log(`getTTMValue: квартал ${q.year} Q${q.quarterNum} = ${value}`);
     if (value !== null) {
       sum += value;
       validCount++;
@@ -811,152 +636,52 @@ function getTTMValue(factsData, metricName, scale, ticker) {
   }
   
   if (validCount === 0) {
-    log(`getTTMValue: не найдено ни одного квартала`);
+    common.log(`getTTMValue: не найдено ни одного квартала`);
     return null;
   }
   
-  log(`getTTMValue: сумма = ${sum}, validCount=${validCount}`);
-  return applyScale(sum, scale);
+  common.log(`getTTMValue: сумма = ${sum}, validCount=${validCount}`);
+  return common.applyScale(sum, scale);
 }
 
 function getMetricValue(factsData, metric, year, quarterParam, scale, ticker) {
   const cacheKey = `${ticker}:${metric}:${year}:${quarterParam}`;
   
-  if (CACHE_CONFIG.metricsCache.enabled) {
-    const cached = getFromCache(metricsCache, cacheKey, CACHE_CONFIG.metricsCache.ttl);
+  if (common.CACHE_CONFIG.metrics.enabled) {
+    const cached = common.getFromCache(common.metricsCache, cacheKey, common.CACHE_CONFIG.metrics.ttl);
     if (cached !== null) {
-      log(`getMetricValue: кэш HIT для ${cacheKey}, значение = ${cached}`);
-      return cached !== null ? applyScale(cached, scale) : null;
+      common.log(`getMetricValue: кэш HIT для ${cacheKey}, значение = ${cached}`);
+      return cached !== null ? common.applyScale(cached, scale) : null;
     }
-    log(`getMetricValue: кэш MISS для ${cacheKey}`);
+    common.log(`getMetricValue: кэш MISS для ${cacheKey}`);
   }
   
   let value;
   if (year === undefined && quarterParam === undefined) {
-    log(`getMetricValue: TTM режим`);
+    common.log(`getMetricValue: TTM режим`);
     value = getTTMValue(factsData, metric, scale, ticker);
   } else {
-    log(`getMetricValue: обычный режим (год=${year}, квартал=${quarterParam})`);
+    common.log(`getMetricValue: обычный режим (год=${year}, квартал=${quarterParam})`);
     value = getMetricValueInternal(factsData, metric, year, quarterParam, scale, ticker);
   }
   
-  if (CACHE_CONFIG.metricsCache.enabled && value !== null) {
-    setToCache(metricsCache, cacheKey, value, CACHE_CONFIG.metricsCache.ttl, CACHE_CONFIG.metricsCache.maxSize);
+  if (common.CACHE_CONFIG.metrics.enabled && value !== null) {
+    common.setToCache(common.metricsCache, cacheKey, value, common.CACHE_CONFIG.metrics.ttl, common.CACHE_CONFIG.metrics.maxSize);
   }
   
-  log(`getMetricValue: результат = ${value}`);
-  return value !== null ? applyScale(value, scale) : null;
+  common.log(`getMetricValue: результат = ${value}`);
+  return value !== null ? common.applyScale(value, scale) : null;
 }
 
-// ============ 10. FETCH С RETRY ==========
-
-async function fetchWithRetry(url, options, maxRetries = 3) {
-  for (let i = 0; i < maxRetries; i++) {
-    try {
-      log(`fetchWithRetry: попытка ${i+1} для ${url.substring(0, 100)}...`);
-      const response = await fetch(url, options);
-      if (response.ok) {
-        log(`fetchWithRetry: успех, status=${response.status}`);
-        return response;
-      }
-      if (response.status === 429) {
-        const delay = Math.pow(2, i) * 1000;
-        log(`fetchWithRetry: rate limit, пауза ${delay}ms`);
-        await new Promise(r => setTimeout(r, delay));
-        continue;
-      }
-      throw new Error(`HTTP ${response.status}`);
-    } catch (error) {
-      log(`fetchWithRetry: ошибка попытки ${i+1}: ${error.message}`);
-      if (i === maxRetries - 1) throw error;
-      await new Promise(r => setTimeout(r, 1000));
-    }
-  }
-}
-
-// ============ 11. ФУНКЦИИ ДЛЯ SEC API (ОБЩИЕ) ==========
-
-async function getCIK(ticker) {
-  log(`getCIK: поиск CIK для тикера ${ticker}`);
-  
-  if (CACHE_CONFIG.cikCache.enabled) {
-    const cached = getFromCache(cikCache, ticker, CACHE_CONFIG.cikCache.ttl);
-    if (cached !== null) {
-      log(`getCIK: кэш HIT для ${ticker} -> ${cached}`);
-      return cached;
-    }
-  }
-  
-  let cik = null;
-  if (tickersCache && isCacheValid({ time: tickersCacheTime }, CACHE_CONFIG.tickersCache.ttl)) {
-    log(`getCIK: tickersCache HIT`);
-  } else {
-    log(`getCIK: tickersCache MISS, загружаем company_tickers.json`);
-    const response = await fetchWithRetry(`${SEC_BASE}/files/company_tickers.json`, {
-      headers: { 'User-Agent': USER_AGENT }
-    });
-    tickersCache = await response.json();
-    tickersCacheTime = Date.now();
-    log(`getCIK: tickersCache обновлён, записей: ${Object.keys(tickersCache).length}`);
-  }
-  
-  const upperTicker = ticker.toUpperCase();
-  const entry = Object.values(tickersCache).find(t => t.ticker === upperTicker);
-  if (!entry) {
-    log(`getCIK: тикер ${ticker} не найден`);
-    return null;
-  }
-  
-  cik = entry.cik_str.toString().padStart(10, '0');
-  log(`getCIK: найден CIK = ${cik}`);
-  
-  if (CACHE_CONFIG.cikCache.enabled && cik) {
-    setToCache(cikCache, ticker, cik, CACHE_CONFIG.cikCache.ttl, CACHE_CONFIG.cikCache.maxSize);
-  }
-  
-  return cik;
-}
-
-async function getCompanyFacts(cik) {
-  log(`getCompanyFacts: загрузка companyfacts для CIK ${cik}`);
-  
-  if (CACHE_CONFIG.factsCache.enabled) {
-    const cached = getFromCache(factsCache, cik, CACHE_CONFIG.factsCache.ttl);
-    if (cached !== null) {
-      log(`getCompanyFacts: кэш HIT для ${cik}`);
-      return cached;
-    }
-    log(`getCompanyFacts: кэш EXPIRED или MISS для ${cik}`);
-  }
-  
-  const url = `${DATA_BASE}/api/xbrl/companyfacts/CIK${cik}.json`;
-  const response = await fetchWithRetry(url, {
-    headers: { 'User-Agent': USER_AGENT }
-  });
-  if (!response.ok) {
-    log(`getCompanyFacts: ошибка загрузки, status=${response.status}`);
-    return null;
-  }
-  
-  const data = await response.json();
-  
-  if (CACHE_CONFIG.factsCache.enabled) {
-    setToCache(factsCache, cik, data, CACHE_CONFIG.factsCache.ttl, CACHE_CONFIG.factsCache.maxSize);
-  }
-  
-  log(`getCompanyFacts: загружено и закэшировано`);
-  return data;
-}
-
-// ============ 12. ОСНОВНЫЕ ФУНКЦИИ (ХЭНДЛЕРЫ ДЛЯ ЭНДПОИНТОВ) ==========
+// ============ 7. ОСНОВНЫЕ ФУНКЦИИ (ХЭНДЛЕРЫ ДЛЯ ЭНДПОИНТОВ) ==========
 
 async function getMetric(req, res) {
   const ticker = req.params.ticker.toUpperCase();
   const year = req.query.year ? parseInt(req.query.year) : undefined;
   const quarter = req.query.quarter !== undefined ? String(req.query.quarter) : undefined;
-  const scale = normalizeScale(req.query.scale);
+  const scale = common.normalizeScale(req.query.scale);
   
-  log(`GET /metrics/${ticker}?year=${year}&quarter=${quarter}&scale=${scale}`);
+  common.log(`GET /metrics/${ticker}?year=${year}&quarter=${quarter}&scale=${scale}`);
   
   try {
     let rawMetrics = req.query.metrics || req.query.metric;
@@ -989,15 +714,15 @@ async function getMetric(req, res) {
       });
     }
     
-    const cik = await getCIK(ticker);
+    const cik = await common.getCIK(ticker);
     if (!cik) {
-      log(`getCIK вернул null для тикера ${ticker}`);
+      common.log(`getCIK вернул null для тикера ${ticker}`);
       return res.status(404).json({ error: 'Тикер не найден' });
     }
     
-    const factsData = await getCompanyFacts(cik);
+    const factsData = await common.getCompanyFacts(cik);
     if (!factsData) {
-      log(`getCompanyFacts вернул null для CIK ${cik}`);
+      common.log(`getCompanyFacts вернул null для CIK ${cik}`);
       return res.status(500).json({ error: 'Ошибка получения данных' });
     }
     
@@ -1016,13 +741,13 @@ async function getMetric(req, res) {
       notFound: notFound.length > 0 ? notFound : undefined
     });
   } catch (error) {
-    log(`GET /metrics error: ${error.message}`);
+    common.log(`GET /metrics error: ${error.message}`);
     res.status(500).json({ error: error.message });
   }
 }
 
 async function getCatalog(req, res) {
-  log('GET /catalog');
+  common.log('GET /catalog');
   try {
     const list = [];
     for (const [key, val] of Object.entries(METRICS_CATALOG)) {
@@ -1036,13 +761,13 @@ async function getCatalog(req, res) {
     }
     res.json({ metrics: list, count: list.length });
   } catch (error) {
-    log(`GET /catalog error: ${error.message}`);
+    common.log(`GET /catalog error: ${error.message}`);
     res.status(500).json({ error: error.message });
   }
 }
 
 async function validateMetric(req, res) {
-  log(`GET /validate/${req.params.metric}`);
+  common.log(`GET /validate/${req.params.metric}`);
   try {
     const resolved = resolveMetric(req.params.metric);
     if (!resolved) {
@@ -1059,15 +784,18 @@ async function validateMetric(req, res) {
       info: METRICS_CATALOG[resolved]
     });
   } catch (error) {
-    log(`GET /validate error: ${error.message}`);
+    common.log(`GET /validate error: ${error.message}`);
     res.status(500).json({ error: error.message });
   }
 }
 
-// ============ 13. ЭКСПОРТ ФУНКЦИЙ ==========
+// ============ 8. ЭКСПОРТ ФУНКЦИЙ ==========
 
 module.exports = {
   getMetric,
   getCatalog,
-  validateMetric
+  validateMetric,
+  // Экспортируем для будущих модулей (ratios, reports)
+  getMetricValue,
+  METRICS_CATALOG
 };
