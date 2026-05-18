@@ -1,6 +1,7 @@
-// ============ EDGAR_METRICS.JS - ЛОГИКА ДЛЯ /METRICS ЭНДПОИНТОВ ===========
+// ============ EDGAR_METRICS.JS - ЛОГИКА ДЛЯ /METRICS ЭНДПОИНТОВ ==========
 // Этот файл содержит ТОЛЬКО логику метрик, без дублирования общих утилит
 
+const catalogs = require('./catalogs');
 const common = require('./edgar_common');
 
 // ============ 1. КОНСТАНТЫ (СПЕЦИФИЧНЫЕ ДЛЯ МЕТРИК) ==========
@@ -14,36 +15,29 @@ const QUARTER_DAYS = {
 };
 
 // ============ 2. ПЕРЕМЕННЫЕ КЭШЕЙ (СПЕЦИФИЧНЫЕ ДЛЯ МЕТРИК) ==========
-// Используем общие кэши из common, но добавляем специфичные для metrics
 const durationCache = new Map();      // Кэш для разницы в днях
 const collectAllTagValuesCache = new Map();  // Кэш для collectAllTagValues
 const getMetricValuesArrayCache = new Map(); // Кэш для getMetricValuesArray
 
-// ============ 5. СПЕЦИФИЧНЫЕ ДЛЯ МЕТРИК УТИЛИТЫ ==========
-
-function getDaysDifference(start, end) {
-  // Отключённый кэш пока не используем, оставляем как было
-  return (new Date(end) - new Date(start)) / (1000 * 60 * 60 * 24);
-}
-
-const catalogs = require('./catalogs');
+// ============ 3. ФУНКЦИЯ РАЗРЕШЕНИЯ АЛИАСОВ ==========
 
 function resolveMetric(alias) {
+  if (!alias) return null;
   const normalized = alias.toString().trim().toLowerCase().replace(/[\s_-]/g, '');
   
   // Прямое совпадение с каталогом
   if (catalogs.METRICS_CATALOG[normalized]) return normalized;
   
-  // Поиск в словаре синонимов
-  if (catalogs.METRIC_ALIASES[normalized]) return catalogs.METRIC_ALIASES[normalized];
-  
-  // Поиск по русскому названию в каталоге
-  for (const [key, val] of Object.entries(catalogs.METRICS_CATALOG)) {
-    const ruClean = val.ru.toLowerCase().replace(/[\s_]/g, '');
-    if (ruClean === normalized) return key;
-  }
+  // Поиск в едином словаре синонимов
+  if (catalogs.ALIASES[normalized]) return catalogs.ALIASES[normalized];
   
   return null;
+}
+
+// ============ 4. СПЕЦИФИЧНЫЕ ДЛЯ МЕТРИК УТИЛИТЫ ==========
+
+function getDaysDifference(start, end) {
+  return (new Date(end) - new Date(start)) / (1000 * 60 * 60 * 24);
 }
 
 function findTagData(factsData, tags) {
@@ -68,10 +62,8 @@ function findTagData(factsData, tags) {
   return null;
 }
 
-// ============ 6. ФУНКЦИИ ДЛЯ РАБОТЫ С МЕТРИКАМИ ==========
-
 function getMetricValuesArray(factsData, tagOrAlias) {
-  const catalog = METRICS_CATALOG[tagOrAlias];
+  const catalog = catalogs.METRICS_CATALOG[tagOrAlias];
   const facts = factsData?.facts;
   if (!facts) {
     common.log('getMetricValuesArray: factsData.facts отсутствует');
@@ -141,7 +133,7 @@ function collectAllTagValues(factsData, tags) {
 }
 
 function getValueFromTag(tagData, metricName, year, quarterParam, isBalanceMetric, ticker, factsData) {
-  const catalog = METRICS_CATALOG[metricName];
+  const catalog = catalogs.METRICS_CATALOG[metricName];
   if (!catalog) {
     common.log(`getValueFromTag: метрика ${metricName} не найдена`);
     return null;
@@ -336,7 +328,7 @@ function searchValueInAllTags(factsData, catalog, year, quarterParam, isBalanceM
       }
     }
     
-    const result = getValueFromTag(tagData.data, catalog.alias || Object.keys(METRICS_CATALOG).find(k => METRICS_CATALOG[k] === catalog), year, quarterParam, isBalanceMetric, ticker, factsData);
+    const result = getValueFromTag(tagData.data, catalog.alias || Object.keys(catalogs.METRICS_CATALOG).find(k => catalogs.METRICS_CATALOG[k] === catalog), year, quarterParam, isBalanceMetric, ticker, factsData);
     if (result !== null && result !== undefined) {
       common.log(`searchValueInAllTags: найден результат в теге ${tag}: ${result}`);
       return result;
@@ -356,7 +348,7 @@ function searchValueInAllTags(factsData, catalog, year, quarterParam, isBalanceM
         continue;
       }
       
-      const computeResult = getValueFromTag(computeFound.data, catalog.alias || Object.keys(METRICS_CATALOG).find(k => METRICS_CATALOG[k] === catalog), year, quarterParam, isBalanceMetric, ticker, factsData);
+      const computeResult = getValueFromTag(computeFound.data, catalog.alias || Object.keys(catalogs.METRICS_CATALOG).find(k => catalogs.METRICS_CATALOG[k] === catalog), year, quarterParam, isBalanceMetric, ticker, factsData);
       if (computeResult !== null && computeResult !== undefined) {
         if (catalog.operation === 'sum') {
           if (sum === null) sum = 0;
@@ -382,7 +374,7 @@ function searchValueInAllTags(factsData, catalog, year, quarterParam, isBalanceM
 }
 
 function getMetricValueInternal(factsData, metric, year, quarterParam, scale, ticker) {
-  const catalog = METRICS_CATALOG[metric];
+  const catalog = catalogs.METRICS_CATALOG[metric];
   if (!catalog) {
     common.log(`getMetricValueInternal: метрика ${metric} не найдена в каталоге`);
     return null;
@@ -438,7 +430,7 @@ function getMetricValueInternal(factsData, metric, year, quarterParam, scale, ti
 }
 
 function getTTMValue(factsData, metricName, scale, ticker) {
-  const catalog = METRICS_CATALOG[metricName];
+  const catalog = catalogs.METRICS_CATALOG[metricName];
   const ttmType = catalog?.ttm || 'sum';
   
   common.log(`getTTMValue: ticker=${ticker}, metric=${metricName}, ttmType=${ttmType}`);
@@ -560,13 +552,19 @@ function getMetricValue(factsData, metric, year, quarterParam, scale, ticker) {
   return value !== null ? common.applyScale(value, scale) : null;
 }
 
-// ============ 7. ОСНОВНЫЕ ФУНКЦИИ (ХЭНДЛЕРЫ ДЛЯ ЭНДПОИНТОВ) ==========
+// ============ 5. ОСНОВНЫЕ ФУНКЦИИ (ХЭНДЛЕРЫ ДЛЯ ЭНДПОИНТОВ) ==========
 
 async function getMetric(req, res) {
-  const ticker = req.params.ticker.toUpperCase();
+  const tickerRaw = req.params.ticker;
   const year = req.query.year ? parseInt(req.query.year) : undefined;
-  const quarter = req.query.quarter !== undefined ? String(req.query.quarter) : undefined;
+  const quarterRaw = req.query.quarter !== undefined ? String(req.query.quarter) : undefined;
   const scale = common.normalizeScale(req.query.scale);
+  
+  // Нормализация тикера
+  const ticker = common.normalizeTicker(tickerRaw);
+  
+  // Нормализация квартала
+  const quarter = common.normalizeQuarter(quarterRaw);
   
   common.log(`GET /metrics/${ticker}?year=${year}&quarter=${quarter}&scale=${scale}`);
   
@@ -596,8 +594,8 @@ async function getMetric(req, res) {
       return res.status(404).json({
         error: 'Метрики не найдены',
         notFound: notFound,
-        available: Object.keys(METRICS_CATALOG).slice(0, 20).join(', ') + '...',
-        totalAvailable: Object.keys(METRICS_CATALOG).length
+        available: Object.keys(catalogs.METRICS_CATALOG).slice(0, 20).join(', ') + '...',
+        totalAvailable: Object.keys(catalogs.METRICS_CATALOG).length
       });
     }
     
@@ -637,7 +635,7 @@ async function getCatalog(req, res) {
   common.log('GET /catalog');
   try {
     const list = [];
-    for (const [key, val] of Object.entries(METRICS_CATALOG)) {
+    for (const [key, val] of Object.entries(catalogs.METRICS_CATALOG)) {
       list.push({
         alias: key,
         ru: val.ru,
@@ -658,17 +656,17 @@ async function validateMetric(req, res) {
   try {
     const resolved = resolveMetric(req.params.metric);
     if (!resolved) {
-      const available = Object.keys(METRICS_CATALOG).slice(0, 20).join(', ');
+      const available = Object.keys(catalogs.METRICS_CATALOG).slice(0, 20).join(', ');
       return res.status(404).json({ 
         error: 'Метрика не найдена',
         available: available,
-        count: Object.keys(METRICS_CATALOG).length
+        count: Object.keys(catalogs.METRICS_CATALOG).length
       });
     }
     res.json({ 
       valid: true, 
       metric: resolved,
-      info: METRICS_CATALOG[resolved]
+      info: catalogs.METRICS_CATALOG[resolved]
     });
   } catch (error) {
     common.log(`GET /validate error: ${error.message}`);
@@ -676,13 +674,12 @@ async function validateMetric(req, res) {
   }
 }
 
-// ============ 8. ЭКСПОРТ ФУНКЦИЙ ==========
+// ============ 6. ЭКСПОРТ ФУНКЦИЙ ==========
 
 module.exports = {
   getMetric,
   getCatalog,
   validateMetric,
-  // Экспортируем для будущих модулей (ratios, reports)
   getMetricValue,
-  METRICS_CATALOG
+  METRICS_CATALOG: catalogs.METRICS_CATALOG
 };
