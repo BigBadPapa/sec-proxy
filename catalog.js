@@ -102,26 +102,10 @@ const METRICS_CATALOG = {
 };
 
 // ============ 2. ЕДИНЫЙ СЛОВАРЬ СИНОНИМОВ ==========
-// Объединяет RU_ALIASES и все синонимы из GAS METRIC_SYNONYMS
-const METRIC_ALIASES = {
-  // ===== Русские (из RU_ALIASES) =====
-  "выручка": "revenue",
-  "себестоимость": "cogs",
-  "валоваяприбыль": "grossprofit",
-  "операционнаяприбыль": "operatingincome",
-  "чистаяприбыль": "netincome",
-  "активы": "totalassets",
-  "обязательства": "totalliabilities",
-  "капитал": "totalequity",
-  "деньги": "cashandequivalents",
-  "долг": "longtermdebt",
-  "акции": "sharesoutstanding",
-  "ocf": "ocf",
-  "fcf": "fcf",
-  "капекс": "capex",
-  "амортизация": "da",
-  
+// Объединяет все: русские, английские, сокращения, поля info
+const ALIASES = {
   // ===== P&L синонимы =====
+  "выручка": "revenue",
   "revenue": "revenue",
   "sales": "revenue",
   "продажи": "revenue",
@@ -138,6 +122,7 @@ const METRIC_ALIASES = {
   "aaa": "aaa",
   
   "cogs": "cogs",
+  "себестоимость": "cogs",
   "cost of sales": "cogs",
   "cost of goods sold": "cogs",
   "cost of revenue": "cogs",
@@ -151,6 +136,7 @@ const METRIC_ALIASES = {
   
   "grossprofit": "grossprofit",
   "gross profit": "grossprofit",
+  "валовая прибыль": "grossprofit",
   "gross margin": "grossprofit",
   "gross profit margin": "grossprofit",
   "gp": "grossprofit",
@@ -198,6 +184,7 @@ const METRIC_ALIASES = {
   
   "operatingincome": "operatingincome",
   "operating income": "operatingincome",
+  "операционная прибыль": "operatingincome",
   "операционная доходность": "operatingincome",
   "ebit": "operatingincome",
   "operating profit": "operatingincome",
@@ -208,6 +195,7 @@ const METRIC_ALIASES = {
   
   "interestincome": "interestincome",
   "interest income": "interestincome",
+  "процентный доход": "interestincome",
   "проценты полученные": "interestincome",
   "процентные доходы": "interestincome",
   "investment income": "interestincome",
@@ -218,6 +206,7 @@ const METRIC_ALIASES = {
   
   "interestexpense": "interestexpense",
   "interest expense": "interestexpense",
+  "процентные расходы": "interestexpense",
   "проценты уплаченные": "interestexpense",
   "процентные затраты": "interestexpense",
   "cost of debt": "interestexpense",
@@ -228,6 +217,7 @@ const METRIC_ALIASES = {
   
   "otherincome": "otherincome",
   "other income": "otherincome",
+  "прочие доходы": "otherincome",
   "другие доходы": "otherincome",
   "miscellaneous income": "otherincome",
   "non-operating income": "otherincome",
@@ -238,6 +228,7 @@ const METRIC_ALIASES = {
   
   "incomebeforetax": "incomebeforetax",
   "income before tax": "incomebeforetax",
+  "прибыль до налога": "incomebeforetax",
   "pbt": "incomebeforetax",
   "profit before tax": "incomebeforetax",
   "pre-tax income": "incomebeforetax",
@@ -248,6 +239,7 @@ const METRIC_ALIASES = {
   
   "taxexpense": "taxexpense",
   "tax expense": "taxexpense",
+  "налог на прибыль": "taxexpense",
   "income tax expense": "taxexpense",
   "налоги": "taxexpense",
   "corporate tax": "taxexpense",
@@ -259,6 +251,7 @@ const METRIC_ALIASES = {
   
   "netincome": "netincome",
   "net income": "netincome",
+  "чистая прибыль": "netincome",
   "чистая прибыль после налогов": "netincome",
   "net profit": "netincome",
   "bottom line": "netincome",
@@ -271,6 +264,7 @@ const METRIC_ALIASES = {
   // ===== Balance Sheet - Assets =====
   "totalassets": "totalassets",
   "total assets": "totalassets",
+  "активы": "totalassets",
   "совокупные активы": "totalassets",
   "балансовая стоимость активов": "totalassets",
   "assets total": "totalassets",
@@ -281,6 +275,7 @@ const METRIC_ALIASES = {
   
   "currentassets": "currentassets",
   "current assets": "currentassets",
+  "оборотные активы": "currentassets",
   "текущие активы": "currentassets",
   "краткосрочные активы": "currentassets",
   "liquid assets": "currentassets",
@@ -293,6 +288,7 @@ const METRIC_ALIASES = {
   "cashandequivalents": "cashandequivalents",
   "cash and equivalents": "cashandequivalents",
   "денежные средства": "cashandequivalents",
+  "деньги": "cashandequivalents",
   "кэш": "cashandequivalents",
   "cash": "cashandequivalents",
   "денежная наличность": "cashandequivalents",
@@ -304,6 +300,7 @@ const METRIC_ALIASES = {
   
   "shortterminvestments": "shortterminvestments",
   "short term investments": "shortterminvestments",
+  "краткосрочные инвестиции": "shortterminvestments",
   "краткосрочные вложения": "shortterminvestments",
   "marketable securities": "shortterminvestments",
   "рыночные ценные бумаги": "shortterminvestments",
@@ -314,6 +311,7 @@ const METRIC_ALIASES = {
   
   "accountsreceivable": "accountsreceivable",
   "accounts receivable": "accountsreceivable",
+  "дебиторская задолженность": "accountsreceivable",
   "дебиторка": "accountsreceivable",
   "ar": "accountsreceivable",
   "receivables": "accountsreceivable",
@@ -335,6 +333,7 @@ const METRIC_ALIASES = {
   
   "prepaidexpenses": "prepaidexpenses",
   "prepaid expenses": "prepaidexpenses",
+  "предоплаченные расходы": "prepaidexpenses",
   "расходы будущих периодов": "prepaidexpenses",
   "авансы выданные": "prepaidexpenses",
   "prepaids": "prepaidexpenses",
@@ -345,6 +344,7 @@ const METRIC_ALIASES = {
   
   "othercurrentassets": "othercurrentassets",
   "other current assets": "othercurrentassets",
+  "прочие оборотные активы": "othercurrentassets",
   "прочая дебиторка": "othercurrentassets",
   "другие краткосрочные активы": "othercurrentassets",
   "прочие оборотные": "othercurrentassets",
@@ -354,6 +354,7 @@ const METRIC_ALIASES = {
   
   "noncurrentassets": "noncurrentassets",
   "non current assets": "noncurrentassets",
+  "внеоборотные активы": "noncurrentassets",
   "долгосрочные активы": "noncurrentassets",
   "внеоборотка": "noncurrentassets",
   "fixed assets": "noncurrentassets",
@@ -365,15 +366,18 @@ const METRIC_ALIASES = {
   "ppe": "ppe",
   "pp&e": "ppe",
   "property plant equipment": "ppe",
+  "основные средства": "ppe",
   "внеоборотные средства": "ppe",
   "основные фонды": "ppe",
   "недвижимость завод оборудование": "ppe",
+  "fixed assets": "ppe",
   "tangible assets": "ppe",
   "долгосрочное имущество": "ppe",
   "материальные активы": "ppe",
   
   "intangibleassets": "intangibleassets",
   "intangible assets": "intangibleassets",
+  "нематериальные активы": "intangibleassets",
   "гудвил": "intangibleassets",
   "интеллектуальная собственность": "intangibleassets",
   "патенты": "intangibleassets",
@@ -392,6 +396,7 @@ const METRIC_ALIASES = {
   
   "longterminvestments": "longterminvestments",
   "long term investments": "longterminvestments",
+  "долгосрочные инвестиции": "longterminvestments",
   "долгосрочные вложения": "longterminvestments",
   "lt investments": "longterminvestments",
   "инвестиции в дочки": "longterminvestments",
@@ -400,6 +405,7 @@ const METRIC_ALIASES = {
   
   "accumulateddepreciation": "accumulateddepreciation",
   "accumulated depreciation": "accumulateddepreciation",
+  "накопленная амортизация": "accumulateddepreciation",
   "амортизация накопленная": "accumulateddepreciation",
   "износ основных средств": "accumulateddepreciation",
   "амортизационный фонд": "accumulateddepreciation",
@@ -408,6 +414,7 @@ const METRIC_ALIASES = {
   
   "deferredtaxassets": "deferredtaxassets",
   "deferred tax assets": "deferredtaxassets",
+  "отложенные налоговые активы": "deferredtaxassets",
   "dta": "deferredtaxassets",
   "отложенные налоги": "deferredtaxassets",
   "налоговые активы": "deferredtaxassets",
@@ -416,6 +423,7 @@ const METRIC_ALIASES = {
   
   "othernoncurrentassets": "othernoncurrentassets",
   "other non current assets": "othernoncurrentassets",
+  "прочие внеоборотные активы": "othernoncurrentassets",
   "прочие долгосрочные активы": "othernoncurrentassets",
   "onca": "othernoncurrentassets",
   "прочие внеоборотные": "othernoncurrentassets",
@@ -425,6 +433,7 @@ const METRIC_ALIASES = {
   // ===== Balance Sheet - Liabilities =====
   "totalliabilities": "totalliabilities",
   "total liabilities": "totalliabilities",
+  "обязательства": "totalliabilities",
   "совокупные обязательства": "totalliabilities",
   "пассивы": "totalliabilities",
   "total debt": "totalliabilities",
@@ -434,6 +443,8 @@ const METRIC_ALIASES = {
   
   "totalcurrentliabilities": "totalcurrentliabilities",
   "total current liabilities": "totalcurrentliabilities",
+  "текущие обязательства": "totalcurrentliabilities",
+  "краткосрочные обязательства": "totalcurrentliabilities",
   "краткосрочные пассивы": "totalcurrentliabilities",
   "short term liabilities": "totalcurrentliabilities",
   "текущие долги": "totalcurrentliabilities",
@@ -441,6 +452,7 @@ const METRIC_ALIASES = {
   
   "accountspayable": "accountspayable",
   "accounts payable": "accountspayable",
+  "кредиторская задолженность": "accountspayable",
   "кредиторка": "accountspayable",
   "ар": "accountspayable",
   "задолженность поставщикам": "accountspayable",
@@ -450,6 +462,7 @@ const METRIC_ALIASES = {
   
   "accruedliabilities": "accruedliabilities",
   "accrued liabilities": "accruedliabilities",
+  "начисленные обязательства": "accruedliabilities",
   "начисления": "accruedliabilities",
   "accrued expenses": "accruedliabilities",
   "задолженность по зарплате": "accruedliabilities",
@@ -464,6 +477,7 @@ const METRIC_ALIASES = {
   
   "shorttermdebt": "shorttermdebt",
   "short term debt": "shorttermdebt",
+  "краткосрочный долг": "shorttermdebt",
   "краткосрочные займы": "shorttermdebt",
   "st debt": "shorttermdebt",
   "текущая часть долга": "shorttermdebt",
@@ -472,6 +486,7 @@ const METRIC_ALIASES = {
   
   "deferredrevenue": "deferredrevenue",
   "deferred revenue": "deferredrevenue",
+  "отложенный доход": "deferredrevenue",
   "предоплата полученная": "deferredrevenue",
   "доходы будущих периодов": "deferredrevenue",
   "авансы полученные": "deferredrevenue",
@@ -481,6 +496,7 @@ const METRIC_ALIASES = {
   
   "othercurrentliabilities": "othercurrentliabilities",
   "other current liabilities": "othercurrentliabilities",
+  "прочие краткосрочные обязательства": "othercurrentliabilities",
   "прочие краткосрочные пассивы": "othercurrentliabilities",
   "ocl": "othercurrentliabilities",
   "другие текущие обязательства": "othercurrentliabilities",
@@ -488,6 +504,7 @@ const METRIC_ALIASES = {
   
   "totalnoncurrentliabilities": "totalnoncurrentliabilities",
   "total non current liabilities": "totalnoncurrentliabilities",
+  "долгосрочные обязательства": "totalnoncurrentliabilities",
   "долгосрочные пассивы": "totalnoncurrentliabilities",
   "long term liabilities": "totalnoncurrentliabilities",
   "долгосрочные долги": "totalnoncurrentliabilities",
@@ -495,6 +512,7 @@ const METRIC_ALIASES = {
   
   "longtermdebt": "longtermdebt",
   "long term debt": "longtermdebt",
+  "долгосрочный долг": "longtermdebt",
   "lt debt": "longtermdebt",
   "долгосрочные займы": "longtermdebt",
   "облигации к погашению": "longtermdebt",
@@ -504,6 +522,7 @@ const METRIC_ALIASES = {
   
   "deferredtaxliabilities": "deferredtaxliabilities",
   "deferred tax liabilities": "deferredtaxliabilities",
+  "отложенные налоговые обязательства": "deferredtaxliabilities",
   "dtl": "deferredtaxliabilities",
   "отложенные налоги к уплате": "deferredtaxliabilities",
   "налоговые обязательства": "deferredtaxliabilities",
@@ -511,12 +530,14 @@ const METRIC_ALIASES = {
   
   "deferredrevenuenoncurrent": "deferredrevenuenoncurrent",
   "deferred revenue non current": "deferredrevenuenoncurrent",
+  "долгосрочный отложенный доход": "deferredrevenuenoncurrent",
   "долгосрочная предоплата": "deferredrevenuenoncurrent",
   "отложенная выручка долгосрочная": "deferredrevenuenoncurrent",
   "long term deferred revenue": "deferredrevenuenoncurrent",
   
   "pensionliabilities": "pensionliabilities",
   "pension liabilities": "pensionliabilities",
+  "пенсионные обязательства": "pensionliabilities",
   "пенсионный долг": "pensionliabilities",
   "обязательства по пенсиям": "pensionliabilities",
   "пенсионный фонд": "pensionliabilities",
@@ -524,6 +545,7 @@ const METRIC_ALIASES = {
   
   "othernoncurrentliabilities": "othernoncurrentliabilities",
   "other non current liabilities": "othernoncurrentliabilities",
+  "прочие долгосрочные обязательства": "othernoncurrentliabilities",
   "прочие долгосрочные пассивы": "othernoncurrentliabilities",
   "oncl": "othernoncurrentliabilities",
   "другие долгосрочные обязательства": "othernoncurrentliabilities",
@@ -531,6 +553,7 @@ const METRIC_ALIASES = {
   // ===== Equity =====
   "preferredstock": "preferredstock",
   "preferred stock": "preferredstock",
+  "привилегированные акции": "preferredstock",
   "префы": "preferredstock",
   "preferred shares": "preferredstock",
   "привелигерованные акции": "preferredstock",
@@ -539,6 +562,7 @@ const METRIC_ALIASES = {
   
   "commonstock": "commonstock",
   "common stock": "commonstock",
+  "обыкновенные акции": "commonstock",
   "обычка": "commonstock",
   "common shares": "commonstock",
   "голосующие акции": "commonstock",
@@ -548,6 +572,7 @@ const METRIC_ALIASES = {
   
   "additionalpaidincapital": "additionalpaidincapital",
   "additional paid in capital": "additionalpaidincapital",
+  "добавочный капитал": "additionalpaidincapital",
   "apic": "additionalpaidincapital",
   "эмиссионный доход": "additionalpaidincapital",
   "дополнительный капитал": "additionalpaidincapital",
@@ -556,6 +581,7 @@ const METRIC_ALIASES = {
   
   "retainedearnings": "retainedearnings",
   "retained earnings": "retainedearnings",
+  "нераспределенная прибыль": "retainedearnings",
   "re": "retainedearnings",
   "нераспределенка": "retainedearnings",
   "накопленная прибыль": "retainedearnings",
@@ -565,6 +591,7 @@ const METRIC_ALIASES = {
   
   "accumulatedothercomprehensiveincome": "accumulatedothercomprehensiveincome",
   "accumulated other comprehensive income": "accumulatedothercomprehensiveincome",
+  "прочий совокупный доход": "accumulatedothercomprehensiveincome",
   "aoci": "accumulatedothercomprehensiveincome",
   "накопленный прочий доход": "accumulatedothercomprehensiveincome",
   "нереализованные доходы": "accumulatedothercomprehensiveincome",
@@ -572,6 +599,7 @@ const METRIC_ALIASES = {
   
   "treasurystock": "treasurystock",
   "treasury stock": "treasurystock",
+  "казначейские акции": "treasurystock",
   "казначейские": "treasurystock",
   "выкупленные акции": "treasurystock",
   "treasury shares": "treasurystock",
@@ -580,6 +608,7 @@ const METRIC_ALIASES = {
   
   "totalequity": "totalequity",
   "total equity": "totalequity",
+  "капитал": "totalequity",
   "совокупный капитал": "totalequity",
   "собственный капитал": "totalequity",
   "equity": "totalequity",
@@ -592,6 +621,7 @@ const METRIC_ALIASES = {
   // ===== Cash Flow =====
   "ocf": "ocf",
   "operating cash flow": "ocf",
+  "операционный денежный поток": "ocf",
   "денежный поток от операций": "ocf",
   "cfo": "ocf",
   "cash from operations": "ocf",
@@ -600,6 +630,7 @@ const METRIC_ALIASES = {
   
   "icf": "icf",
   "investing cash flow": "icf",
+  "инвестиционный денежный поток": "icf",
   "денежный поток от инвестиций": "icf",
   "cfi": "icf",
   "cash from investing": "icf",
@@ -607,6 +638,7 @@ const METRIC_ALIASES = {
   
   "fcf": "fcf",
   "free cash flow": "fcf",
+  "свободный денежный поток": "fcf",
   "свободный кэш": "fcf",
   "свободная ликвидность": "fcf",
   "cash after capex": "fcf",
@@ -614,18 +646,22 @@ const METRIC_ALIASES = {
   
   "netincomecf": "netincomecf",
   "net income cash flow": "netincomecf",
+  "чистая прибыль для денежного потока": "netincomecf",
   "net income": "netincomecf",
   "ni cf": "netincomecf",
   
   "da": "da",
   "depreciation and amortization": "da",
+  "амортизация и износ": "da",
   "d&a": "da",
+  "амортизация": "da",
   "износ": "da",
   "амортизационные отчисления": "da",
   "амортизация ос": "da",
   
   "stockbasedcompensation": "stockbasedcompensation",
   "stock based compensation": "stockbasedcompensation",
+  "вознаграждение акциями": "stockbasedcompensation",
   "sbc": "stockbasedcompensation",
   "акционерное вознаграждение": "stockbasedcompensation",
   "выплаты акциями": "stockbasedcompensation",
@@ -633,6 +669,8 @@ const METRIC_ALIASES = {
   "rsu": "stockbasedcompensation",
   
   "deferredtax": "deferredtax",
+  "deferred tax": "deferredtax",
+  "отложенные налоги": "deferredtax",
   "отложенный налог": "deferredtax",
   "dta + dtl": "deferredtax",
   "deferred tax expense": "deferredtax",
@@ -640,39 +678,46 @@ const METRIC_ALIASES = {
   
   "workingcapitalchanges": "workingcapitalchanges",
   "working capital changes": "workingcapitalchanges",
+  "изменение оборотного капитала": "workingcapitalchanges",
   "изменение оборотки": "workingcapitalchanges",
   "wc change": "workingcapitalchanges",
   "изменение текущих активов и пассивов": "workingcapitalchanges",
   
   "accountsreceivablechange": "accountsreceivablechange",
   "ar change": "accountsreceivablechange",
+  "изменение дебиторки": "accountsreceivablechange",
   "изменение дебиторской задолженности": "accountsreceivablechange",
   "ar": "accountsreceivablechange",
   
   "inventorychange": "inventorychange",
   "inventory change": "inventorychange",
+  "изменение запасов": "inventorychange",
   "изменение складских запасов": "inventorychange",
   "товарные остатки": "inventorychange",
   
   "accountspayablechange": "accountspayablechange",
   "ap change": "accountspayablechange",
+  "изменение кредиторки": "accountspayablechange",
   "изменение кредиторской задолженности": "accountspayablechange",
   "ap": "accountspayablechange",
   
   "otheroperatingactivities": "otheroperatingactivities",
   "other operating activities": "otheroperatingactivities",
+  "прочие операционные": "otheroperatingactivities",
   "прочие операционные потоки": "otheroperatingactivities",
   "другие поступления": "otheroperatingactivities",
   "miscellaneous operating": "otheroperatingactivities",
   
   "capex": "capex",
   "capital expenditures": "capex",
+  "капекс": "capex",
   "капитальные затраты": "capex",
   "покупка ос": "capex",
   "капитальные вложения": "capex",
   "инвестиции в основные средства": "capex",
   
   "acquisitions": "acquisitions",
+  "приобретения": "acquisitions",
   "покупка бизнесов": "acquisitions",
   "m&a": "acquisitions",
   "поглощения": "acquisitions",
@@ -681,23 +726,27 @@ const METRIC_ALIASES = {
   
   "purchaseofinvestments": "purchaseofinvestments",
   "purchase of investments": "purchaseofinvestments",
+  "покупка инвестиций": "purchaseofinvestments",
   "приобретение инвестиций": "purchaseofinvestments",
   "покупка ценных бумаг": "purchaseofinvestments",
   "вложения в инвестиции": "purchaseofinvestments",
   
   "saleofinvestments": "saleofinvestments",
   "sale of investments": "saleofinvestments",
+  "продажа инвестиций": "saleofinvestments",
   "реализация инвестиций": "saleofinvestments",
   "продажа ценных бумаг": "saleofinvestments",
   "выбытие инвестиций": "saleofinvestments",
   
   "otherinvestingactivities": "otherinvestingactivities",
   "other investing activities": "otherinvestingactivities",
+  "прочие инвестиционные": "otherinvestingactivities",
   "прочие инвестиционные потоки": "otherinvestingactivities",
   "другое по инвестициям": "otherinvestingactivities",
   
   "debtissuance": "debtissuance",
   "debt issuance": "debtissuance",
+  "выпуск долга": "debtissuance",
   "привлечение кредитов": "debtissuance",
   "получение займов": "debtissuance",
   "issuance of debt": "debtissuance",
@@ -705,6 +754,7 @@ const METRIC_ALIASES = {
   
   "debtrepayment": "debtrepayment",
   "debt repayment": "debtrepayment",
+  "погашение долга": "debtrepayment",
   "выплата кредитов": "debtrepayment",
   "погашение займов": "debtrepayment",
   "repayment of debt": "debtrepayment",
@@ -712,12 +762,14 @@ const METRIC_ALIASES = {
   
   "stockissuance": "stockissuance",
   "stock issuance": "stockissuance",
+  "выпуск акций": "stockissuance",
   "эмиссия акций": "stockissuance",
   "размещение акций": "stockissuance",
   "ipo": "stockissuance",
   "допэмиссия": "stockissuance",
   "issue of shares": "stockissuance",
   
+  "buybacks": "buybacks",
   "buybacks": "buybacks",
   "обратный выкуп": "buybacks",
   "байбэк": "buybacks",
@@ -726,6 +778,7 @@ const METRIC_ALIASES = {
   
   "dividendspaid": "dividendspaid",
   "dividends paid": "dividendspaid",
+  "дивиденды выплаченные": "dividendspaid",
   "выплаты дивидендов": "dividendspaid",
   "дивидендные выплаты": "dividendspaid",
   "cash dividends": "dividendspaid",
@@ -733,11 +786,13 @@ const METRIC_ALIASES = {
   
   "otherfinancingactivities": "otherfinancingactivities",
   "other financing activities": "otherfinancingactivities",
+  "прочие финансовые": "otherfinancingactivities",
   "прочие финансовые потоки": "otherfinancingactivities",
   "другое по финансированию": "otherfinancingactivities",
   
   "effectofexchangerate": "effectofexchangerate",
   "effect of exchange rate": "effectofexchangerate",
+  "влияние курсов валют": "effectofexchangerate",
   "валютная разница": "effectofexchangerate",
   "курсовые разницы": "effectofexchangerate",
   "forex effect": "effectofexchangerate",
@@ -745,12 +800,14 @@ const METRIC_ALIASES = {
   
   "netchangeincash": "netchangeincash",
   "net change in cash": "netchangeincash",
+  "чистое изменение денег": "netchangeincash",
   "прирост денег": "netchangeincash",
   "изменение ликвидности": "netchangeincash",
   "увеличение денежных средств": "netchangeincash",
   
   "beginningcash": "beginningcash",
   "beginning cash": "beginningcash",
+  "деньги на начало": "beginningcash",
   "начальный остаток": "beginningcash",
   "наличность на начало": "beginningcash",
   "opening cash": "beginningcash",
@@ -758,6 +815,7 @@ const METRIC_ALIASES = {
   
   "endingcash": "endingcash",
   "ending cash": "endingcash",
+  "деньги на конец": "endingcash",
   "конечный остаток": "endingcash",
   "наличность на конец": "endingcash",
   "closing cash": "endingcash",
@@ -770,6 +828,7 @@ const METRIC_ALIASES = {
   "средневзвешенные акции basic": "sharesbasic",
   "weighted average shares basic": "sharesbasic",
   "waso": "sharesbasic",
+  "обыкновенные акции": "sharesbasic",
   
   "sharesdiluted": "sharesdiluted",
   "shares diluted": "sharesdiluted",
@@ -813,7 +872,60 @@ const METRIC_ALIASES = {
   "дивиденды на акцию": "dividendspershare",
   "dividends per share": "dividendspershare",
   "дивиденд на одну акцию": "dividendspershare",
-  "пер акцию дивиденды": "dividendspershare"
+  "пер акцию дивиденды": "dividendspershare",
+  
+  // ===== INFO поля (для EDGAR_INFO) =====
+  "cik": "cik",
+  "сик": "cik",
+  "name": "name",
+  "имя": "name",
+  "название": "name",
+  "наименование": "name",
+  "ein": "ein",
+  "инн": "ein",
+  "description": "description",
+  "описание": "description",
+  "category": "category",
+  "категория": "category",
+  "fiscalyearend": "fiscalYearEnd",
+  "конецгода": "fiscalYearEnd",
+  "конецфин.года": "fiscalYearEnd",
+  "конецфинансовогогода": "fiscalYearEnd",
+  "stateofincorporation": "stateOfIncorporation",
+  "state_of_incorporation": "stateOfIncorporation",
+  "штат": "stateOfIncorporation",
+  "phone": "phone",
+  "телефон": "phone",
+  "website": "website",
+  "site": "website",
+  "сайт": "website",
+  "investorwebsite": "investorWebsite",
+  "сайтинвесторов": "investorWebsite",
+  "сайтинвестора": "investorWebsite",
+  "сайтдляинвесторов": "investorWebsite",
+  "businessaddress": "businessAddress",
+  "адрес": "businessAddress",
+  "бизнесадрес": "businessAddress",
+  "адресбизнеса": "businessAddress",
+  "адреспредприятия": "businessAddress",
+  "mailingaddress": "mailingAddress",
+  "почтовыйадрес": "mailingAddress",
+  "tickers": "tickers",
+  "тикеры": "tickers",
+  "exchanges": "exchanges",
+  "биржи": "exchanges",
+  "sic": "sic",
+  "sicdescription": "sicDescription",
+  "sic_description": "sicDescription",
+  "formernames": "formerNames",
+  "бывшиеназвания": "formerNames",
+  "бывшиеимена": "formerNames",
+  "прошлыеназвания": "formerNames",
+  "прошлые имена": "formerNames",
+  "entitytype": "entityType",
+  "тип": "entityType",
+  "flags": "flags",
+  "флаги": "flags"
 };
 
 // ============ 3. ДОПОЛНИТЕЛЬНЫЕ СПРАВОЧНИКИ ==========
@@ -837,7 +949,7 @@ const UNIT_TYPES = ['USD', 'shares', 'pure'];
 // ============ 4. ЭКСПОРТ ==========
 module.exports = {
   METRICS_CATALOG,
-  METRIC_ALIASES,
+  ALIASES,
   FORM_TYPES,
   TAXONOMIES,
   UNIT_TYPES
