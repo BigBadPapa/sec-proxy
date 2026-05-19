@@ -47,13 +47,4 @@ app.listen(PORT, () => {
   console.log(`========================================`);
 });
 
-module.exports = app;  console.log(`========================================`);
-  console.log(`SEC Proxy server running on port ${PORT}`);
-  console.log(`Health check: http://localhost:${PORT}/ping`);
-  console.log(`Metrics: http://localhost:${PORT}/metrics/AAPL?metrics=revenue`);
-  console.log(`Info: http://localhost:${PORT}/info/AAPL`);
-  console.log(`Catalog: http://localhost:${PORT}/catalog`);
-  console.log(`========================================`);
-});
-
 module.exports = app;
