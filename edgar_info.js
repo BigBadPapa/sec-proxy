@@ -45,25 +45,67 @@ async function getInfo(req, res) {
       const result = {};
       
       for (const f of fieldsList) {
+        // Шаг 1: резолвим через каталог (как в обычном запросе)
         const resolvedField = resolveInfoField(f);
+        
+        // Шаг 2: достаем значение по resolvedField (поддержка вложенных полей через точку)
         const keys = resolvedField.split('.');
         let value = subData;
-        
         for (const key of keys) {
-          if (value === null || value === undefined) {
-            result[resolvedField] = null;
-            break;
-          }
+          if (value === null || value === undefined) break;
           value = value[key];
         }
         
-        if (result[resolvedField] === undefined) {
-          result[resolvedField] = (value !== null && value !== undefined) ? value : null;
-        }
+        // Шаг 3: возвращаем с ИСХОДНЫМ ключом (который прислал пользователь)
+        result[f] = (value !== null && value !== undefined) ? value : null;
       }
       
       return res.json(result);
     }
+    
+    // ============ ОДНО ПОЛЕ ============
+    if (fieldRaw) {
+      const resolvedField = resolveInfoField(fieldRaw);
+      const keys = resolvedField.split('.');
+      let value = subData;
+      
+      for (const key of keys) {
+        if (value === null || value === undefined) {
+          return res.json({ field: resolvedField, value: null });
+        }
+        value = value[key];
+      }
+      
+      return res.json({ field: resolvedField, value: (value !== null && value !== undefined) ? value : null });
+    }
+    
+    // ============ ВСЕ ПОЛЯ (полная информация) ============
+    res.json({
+      cik: subData.cik,
+      name: subData.entityName,
+      ein: subData.ein || null,
+      entityType: subData.entityType || null,
+      description: subData.description || null,
+      tickers: subData.tickers || [],
+      exchanges: subData.exchanges || [],
+      sic: subData.sic || null,
+      sicDescription: subData.sicDescription || null,
+      category: subData.category || null,
+      stateOfIncorporation: subData.stateOfIncorporation || null,
+      fiscalYearEnd: subData.fiscalYearEnd || null,
+      phone: subData.phone || null,
+      website: subData.website || null,
+      businessAddress: subData.addresses?.business || null,
+      mailingAddress: subData.addresses?.mailing || null,
+      formerNames: subData.formerNames || [],
+      flags: subData.flags || null
+    });
+    
+  } catch (error) {
+    common.log(`GET /info error: ${error.message}`);
+    res.status(500).json({ error: error.message });
+  }
+}
     
     // ============ ОДНО ПОЛЕ ============
     if (fieldRaw) {
