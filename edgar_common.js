@@ -10,19 +10,12 @@ const DATA_BASE = 'https://data.sec.gov';
 
 // Единый конфиг кэшей для всех модулей
 const CACHE_CONFIG = {
-  // Кэш для тикеров (company_tickers.json)
   tickers: { enabled: true, ttl: 24 * 60 * 60 * 1000, maxSize: 1 },
-  // Кэш для CIK по тикеру
   cik: { enabled: true, ttl: 24 * 60 * 60 * 1000, maxSize: 500 },
-  // Кэш для companyfacts (финансовые данные XBRL)
   facts: { enabled: true, ttl: 6 * 60 * 60 * 1000, maxSize: 20 },
-  // Кэш для submissions (метаданные компании)
   submissions: { enabled: true, ttl: 24 * 60 * 60 * 1000, maxSize: 20 },
-  // Кэш для результатов метрик (используется metrics)
   metrics: { enabled: true, ttl: 5 * 60 * 1000, maxSize: 1000 },
-  // Кэш для разбора строки квартала (используется metrics)
   quarterParse: { enabled: true, ttl: Infinity, maxSize: 50 },
-  // Кэш для метаданных компании (используется info)
   companyMeta: { enabled: true, ttl: 24 * 60 * 60 * 1000, maxSize: 500 }
 };
 
@@ -117,15 +110,6 @@ function parseQuarterStringCached(quarterStr) {
   return result;
 }
 
-function normalizeScale(scale) {
-  if (!scale) return null;
-  const str = String(scale).toLowerCase().trim();
-  if (str === 'k' || str === 'т' || str === 'тысячи') return 'k';
-  if (str === 'kk' || str === 'м' || str === 'миллионы') return 'kk';
-  if (str === 'kkk' || str === 'млрд' || str === 'миллиарды') return 'kkk';
-  return null;
-}
-
 function applyScale(value, scale) {
   if (value === null || value === undefined) return null;
   if (!scale) return value;
@@ -137,29 +121,7 @@ function applyScale(value, scale) {
   }
 }
 
-// ============ 4. НОВЫЕ ФУНКЦИИ (ПЕРЕНОС ИЗ GAS) ==========
-
-function normalizeQuarter(value) {
-  if (value === undefined || value === null) return undefined;
-  const str = String(value).toLowerCase().trim();
-  if (str === 'год' || str === 'годовой' || str === 'fy') return 'annual';
-  if (str === 'q1') return 'q1';
-  if (str === 'q2') return 'q2';
-  if (str === 'q3') return 'q3';
-  if (str === 'q4') return 'q4';
-  if (str === '1q') return '1q';
-  if (str === '2q') return '2q';
-  if (str === '3q') return '3q';
-  if (str === '4q') return '4q';
-  return undefined;
-}
-
-function normalizeTicker(ticker) {
-  if (!ticker) return null;
-  return String(ticker).toUpperCase().trim().replace(/\./g, '-');
-}
-
-// ============ 5. ФУНКЦИИ ДЛЯ КЭШИРОВАНИЯ ==========
+// ============ 4. ФУНКЦИИ ДЛЯ КЭШИРОВАНИЯ ==========
 
 function isCacheValid(cached, ttl) {
   return cached && (Date.now() - cached.time < ttl);
@@ -181,7 +143,7 @@ function setToCache(map, key, data, ttl, maxSize) {
   map.set(key, { data, time: Date.now() });
 }
 
-// ============ 6. HTTP С РЕТРАЯМИ ==========
+// ============ 5. HTTP С РЕТРАЯМИ ==========
 
 async function fetchWithRetry(url, options, maxRetries = 3) {
   for (let i = 0; i < maxRetries; i++) {
@@ -207,7 +169,7 @@ async function fetchWithRetry(url, options, maxRetries = 3) {
   }
 }
 
-// ============ 7. ФУНКЦИИ ДЛЯ SEC API ==========
+// ============ 6. ФУНКЦИИ ДЛЯ SEC API ==========
 
 async function getCIK(ticker) {
   log(`getCIK: поиск CIK для тикера ${ticker}`);
@@ -301,7 +263,7 @@ async function getSubmissionsData(cik) {
   return data;
 }
 
-// ============ 8. ХЕНДЛЕРЫ ДЛЯ УПРАВЛЕНИЯ КЭШЕМ ==========
+// ============ 7. ХЕНДЛЕРЫ ДЛЯ УПРАВЛЕНИЯ КЭШЕМ ==========
 
 async function getCacheStatus(req, res) {
   log('GET /cache-status');
@@ -334,16 +296,13 @@ async function clearCache(req, res) {
   res.json({ message: `Кэш ${key} очищен` });
 }
 
-// ============ 9. ЭКСПОРТ ==========
+// ============ 8. ЭКСПОРТ ==========
 
 module.exports = {
-  // Константы
   USER_AGENT,
   SEC_BASE,
   DATA_BASE,
   CACHE_CONFIG,
-  
-  // Кэш-переменные (для доступа из модулей)
   tickersCache,
   tickersCacheTime,
   cikCache,
@@ -352,8 +311,6 @@ module.exports = {
   submissionsCache,
   quarterParseCache,
   companyMetaCache,
-  
-  // Базовые утилиты
   log,
   safeDateValue,
   sortByEndDesc,
@@ -362,25 +319,14 @@ module.exports = {
   findAnnualReport,
   findQuarterlyReport,
   parseQuarterStringCached,
-  normalizeScale,
   applyScale,
-  
-  // Новые утилиты (из GAS)
-  normalizeQuarter,
-  normalizeTicker,
-  
-  // Кэш-утилиты
   isCacheValid,
   getFromCache,
   setToCache,
-  
-  // HTTP и SEC API
   fetchWithRetry,
   getCIK,
   getCompanyFacts,
   getSubmissionsData,
-  
-  // Хендлеры
   getCacheStatus,
   clearCache
 };
