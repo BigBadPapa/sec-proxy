@@ -1,5 +1,4 @@
 // ============ HANDLER.JS - ОБРАБОТЧИК ЗАПРОСОВ ОТ GAS ==========
-// Принимает сырые данные от GAS, парсит, вызывает нужную логику, форматирует ответ
 
 const catalogs = require('./catalogs');
 const metricsLogic = require('./edgar_metrics');
@@ -97,26 +96,19 @@ function resolveAlias(alias, context = 'metric') {
   return alias.toString().trim();
 }
 
-// ============ 2. ФОРМАТИРОВАТЕЛИ ОТВЕТА ==========
+// ============ 2. ФОРМАТИРОВАТЕЛИ ОТВЕТА ДЛЯ GAS ==========
 
 function formatResponse(success, data, isBatch = false, notFound = [], error = null) {
-  const response = { success };
-  
-  if (error) {
-    response.error = error;
-    return response;
+  if (!success) {
+    return { success: false, displayValue: error || 'Ошибка' };
   }
   
   if (isBatch) {
-    response.isBatch = true;
-    response.results = data;
-    if (notFound.length > 0) response.notFound = notFound;
+    // Двумерный массив для горизонтального растягивания в GAS
+    return { success: true, displayValue: [data] };
   } else {
-    response.isBatch = false;
-    response.result = data;
+    return { success: true, displayValue: data };
   }
-  
-  return response;
 }
 
 // ============ 3. ОСНОВНЫЕ ОБРАБОТЧИКИ ==========
@@ -125,7 +117,6 @@ async function processEdgar(req, res) {
   try {
     const { ticker: rawTicker, metric: rawMetric, year: rawYear, quarter: rawQuarter, scale: rawScale, compare: rawCompare } = req.body;
     
-    // Парсинг
     const ticker = parseTicker(rawTicker);
     if (!ticker) {
       return res.json(formatResponse(false, null, false, [], 'Тикер не указан'));
@@ -141,7 +132,6 @@ async function processEdgar(req, res) {
     const scale = parseScale(rawScale);
     const compare = rawCompare ? String(rawCompare).toLowerCase().trim() : undefined;
     
-    // Резолвинг метрик
     const resolvedMetrics = [];
     const notFound = [];
     
@@ -158,31 +148,24 @@ async function processEdgar(req, res) {
       return res.json(formatResponse(false, null, isBatch, notFound, 'Метрики не найдены'));
     }
     
-    // Получение CIK
     const common = require('./edgar_common');
     const cik = await common.getCIK(ticker);
     if (!cik) {
       return res.json(formatResponse(false, null, isBatch, [], 'Тикер не найден'));
     }
     
-    // Получение companyfacts
     const factsData = await common.getCompanyFacts(cik);
     if (!factsData) {
       return res.json(formatResponse(false, null, isBatch, [], 'Ошибка получения данных из SEC'));
     }
     
-    // Расчет метрик
     const results = [];
     for (const metric of resolvedMetrics) {
       const value = metricsLogic.getMetricValue(factsData, metric, year, quarter, scale, ticker);
       results.push(value !== null ? value : null);
     }
     
-    if (isBatch && results.length > 1) {
-      return res.json(formatResponse(true, results, true, notFound));
-    } else {
-      return res.json(formatResponse(true, results[0], false, notFound));
-    }
+    return res.json(formatResponse(true, results, isBatch, notFound));
     
   } catch (error) {
     console.error('processEdgar error:', error);
@@ -194,7 +177,6 @@ async function processInfo(req, res) {
   try {
     const { ticker: rawTicker, field: rawField } = req.body;
     
-    // Парсинг
     const ticker = parseTicker(rawTicker);
     if (!ticker) {
       return res.json(formatResponse(false, null, false, [], 'Тикер не указан'));
@@ -205,7 +187,6 @@ async function processInfo(req, res) {
       return res.json(formatResponse(false, null, false, [], 'Поля не указаны'));
     }
     
-    // Резолвинг полей
     const resolvedFields = [];
     const notFound = [];
     
@@ -222,7 +203,6 @@ async function processInfo(req, res) {
       return res.json(formatResponse(false, null, isBatch, notFound, 'Поля не найдены'));
     }
     
-    // Получение данных
     const common = require('./edgar_common');
     const cik = await common.getCIK(ticker);
     if (!cik) {
@@ -234,10 +214,7 @@ async function processInfo(req, res) {
       return res.json(formatResponse(false, null, isBatch, [], 'Ошибка получения данных из SEC'));
     }
     
-    // Извлечение значений
     const results = [];
-    const notFoundResults = [];
-    
     for (const { original, resolved } of resolvedFields) {
       const keys = resolved.split('.');
       let value = subData;
@@ -251,19 +228,13 @@ async function processInfo(req, res) {
       results.push(value !== null && value !== undefined ? value : null);
     }
     
-    if (isBatch && results.length > 1) {
-      return res.json(formatResponse(true, results, true, notFound));
-    } else {
-      return res.json(formatResponse(true, results[0], false, notFound));
-    }
+    return res.json(formatResponse(true, results, isBatch, notFound));
     
   } catch (error) {
     console.error('processInfo error:', error);
     return res.json(formatResponse(false, null, false, [], error.message));
   }
 }
-
-// ============ 4. ЭКСПОРТ ==========
 
 module.exports = {
   processEdgar,
