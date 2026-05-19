@@ -96,15 +96,14 @@ function resolveAlias(alias, context = 'metric') {
   return alias.toString().trim();
 }
 
-// ============ 2. ФОРМАТИРОВАТЕЛИ ОТВЕТА ДЛЯ GAS ==========
+// ============ 2. ФОРМАТИРОВАТЕЛЬ ОТВЕТА ДЛЯ GAS ==========
 
-function formatResponse(success, data, isBatch = false, notFound = [], error = null) {
+function formatResponse(success, data, isBatch = false, error = null) {
   if (!success) {
     return { success: false, displayValue: error || 'Ошибка' };
   }
   
   if (isBatch) {
-    // Двумерный массив для горизонтального растягивания в GAS
     return { success: true, displayValue: [data] };
   } else {
     return { success: true, displayValue: data };
@@ -119,12 +118,12 @@ async function processEdgar(req, res) {
     
     const ticker = parseTicker(rawTicker);
     if (!ticker) {
-      return res.json(formatResponse(false, null, false, [], 'Тикер не указан'));
+      return res.json(formatResponse(false, null, false, 'Тикер не указан'));
     }
     
     const { metricsArray, isBatch } = parseMetrics(rawMetric);
     if (metricsArray.length === 0) {
-      return res.json(formatResponse(false, null, false, [], 'Метрики не указаны'));
+      return res.json(formatResponse(false, null, false, 'Метрики не указаны'));
     }
     
     const year = parseYear(rawYear);
@@ -133,30 +132,24 @@ async function processEdgar(req, res) {
     const compare = rawCompare ? String(rawCompare).toLowerCase().trim() : undefined;
     
     const resolvedMetrics = [];
-    const notFound = [];
-    
     for (const m of metricsArray) {
       const resolved = resolveAlias(m, 'metric');
-      if (resolved) {
-        resolvedMetrics.push(resolved);
-      } else {
-        notFound.push(m);
-      }
+      if (resolved) resolvedMetrics.push(resolved);
     }
     
     if (resolvedMetrics.length === 0) {
-      return res.json(formatResponse(false, null, isBatch, notFound, 'Метрики не найдены'));
+      return res.json(formatResponse(false, null, isBatch, 'Метрики не найдены'));
     }
     
     const common = require('./edgar_common');
     const cik = await common.getCIK(ticker);
     if (!cik) {
-      return res.json(formatResponse(false, null, isBatch, [], 'Тикер не найден'));
+      return res.json(formatResponse(false, null, isBatch, 'Тикер не найден'));
     }
     
     const factsData = await common.getCompanyFacts(cik);
     if (!factsData) {
-      return res.json(formatResponse(false, null, isBatch, [], 'Ошибка получения данных из SEC'));
+      return res.json(formatResponse(false, null, isBatch, 'Ошибка получения данных из SEC'));
     }
     
     const results = [];
@@ -165,11 +158,11 @@ async function processEdgar(req, res) {
       results.push(value !== null ? value : null);
     }
     
-    return res.json(formatResponse(true, results, isBatch, notFound));
+    return res.json(formatResponse(true, results, isBatch));
     
   } catch (error) {
     console.error('processEdgar error:', error);
-    return res.json(formatResponse(false, null, false, [], error.message));
+    return res.json(formatResponse(false, null, false, error.message));
   }
 }
 
@@ -179,43 +172,37 @@ async function processInfo(req, res) {
     
     const ticker = parseTicker(rawTicker);
     if (!ticker) {
-      return res.json(formatResponse(false, null, false, [], 'Тикер не указан'));
+      return res.json(formatResponse(false, null, false, 'Тикер не указан'));
     }
     
     const { fieldsArray, isBatch } = parseFields(rawField);
     if (fieldsArray.length === 0) {
-      return res.json(formatResponse(false, null, false, [], 'Поля не указаны'));
+      return res.json(formatResponse(false, null, false, 'Поля не указаны'));
     }
     
     const resolvedFields = [];
-    const notFound = [];
-    
     for (const f of fieldsArray) {
       const resolved = resolveAlias(f, 'info');
-      if (resolved) {
-        resolvedFields.push({ original: f, resolved });
-      } else {
-        notFound.push(f);
-      }
+      if (resolved) resolvedFields.push(resolved);
     }
     
     if (resolvedFields.length === 0) {
-      return res.json(formatResponse(false, null, isBatch, notFound, 'Поля не найдены'));
+      return res.json(formatResponse(false, null, isBatch, 'Поля не найдены'));
     }
     
     const common = require('./edgar_common');
     const cik = await common.getCIK(ticker);
     if (!cik) {
-      return res.json(formatResponse(false, null, isBatch, [], 'Тикер не найден'));
+      return res.json(formatResponse(false, null, isBatch, 'Тикер не найден'));
     }
     
     const subData = await common.getSubmissionsData(cik);
     if (!subData) {
-      return res.json(formatResponse(false, null, isBatch, [], 'Ошибка получения данных из SEC'));
+      return res.json(formatResponse(false, null, isBatch, 'Ошибка получения данных из SEC'));
     }
     
     const results = [];
-    for (const { original, resolved } of resolvedFields) {
+    for (const resolved of resolvedFields) {
       const keys = resolved.split('.');
       let value = subData;
       for (const key of keys) {
@@ -228,11 +215,11 @@ async function processInfo(req, res) {
       results.push(value !== null && value !== undefined ? value : null);
     }
     
-    return res.json(formatResponse(true, results, isBatch, notFound));
+    return res.json(formatResponse(true, results, isBatch));
     
   } catch (error) {
     console.error('processInfo error:', error);
-    return res.json(formatResponse(false, null, false, [], error.message));
+    return res.json(formatResponse(false, null, false, error.message));
   }
 }
 
