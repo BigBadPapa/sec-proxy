@@ -25,10 +25,12 @@ function resolveInfoField(alias) {
 async function getInfo(req, res) {
   const tickerRaw = req.params.ticker;
   const fieldRaw = req.query.field;
+  const fieldsRaw = req.query.fields;
   
+  // Нормализация тикера
   const ticker = common.normalizeTicker(tickerRaw);
   
-  common.log(`GET /info/${ticker}${fieldRaw ? `?field=${fieldRaw}` : ''}`);
+  common.log(`GET /info/${ticker}${fieldRaw ? `?field=${fieldRaw}` : ''}${fieldsRaw ? `?fields=${fieldsRaw}` : ''}`);
   
   try {
     const cik = await common.getCIK(ticker);
@@ -37,19 +39,49 @@ async function getInfo(req, res) {
     const subData = await common.getSubmissionsData(cik);
     if (!subData) return res.status(500).json({ error: 'Ошибка получения данных' });
     
+    // ============ BATCH РЕЖИМ: несколько полей ============
+    if (fieldsRaw) {
+      const fieldsList = fieldsRaw.split(',').map(f => f.trim());
+      const result = {};
+      
+      for (const f of fieldsList) {
+        const resolvedField = resolveInfoField(f);
+        const keys = resolvedField.split('.');
+        let value = subData;
+        
+        for (const key of keys) {
+          if (value === null || value === undefined) {
+            result[resolvedField] = null;
+            break;
+          }
+          value = value[key];
+        }
+        
+        if (result[resolvedField] === undefined) {
+          result[resolvedField] = (value !== null && value !== undefined) ? value : null;
+        }
+      }
+      
+      return res.json(result);
+    }
+    
+    // ============ ОДНО ПОЛЕ ============
     if (fieldRaw) {
       const resolvedField = resolveInfoField(fieldRaw);
       const keys = resolvedField.split('.');
       let value = subData;
+      
       for (const key of keys) {
         if (value === null || value === undefined) {
           return res.json({ field: resolvedField, value: null });
         }
         value = value[key];
       }
-      return res.json({ field: resolvedField, value: value !== null && value !== undefined ? value : null });
+      
+      return res.json({ field: resolvedField, value: (value !== null && value !== undefined) ? value : null });
     }
     
+    // ============ ВСЕ ПОЛЯ (полная информация) ============
     res.json({
       cik: subData.cik,
       name: subData.entityName,
@@ -70,6 +102,7 @@ async function getInfo(req, res) {
       formerNames: subData.formerNames || [],
       flags: subData.flags || null
     });
+    
   } catch (error) {
     common.log(`GET /info error: ${error.message}`);
     res.status(500).json({ error: error.message });
