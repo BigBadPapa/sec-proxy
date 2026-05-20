@@ -1,6 +1,7 @@
 // ============ HANDLER.JS - ОБРАБОТЧИК ЗАПРОСОВ ОТ GAS ==========
 
 const common = require('./common');
+const cache = require('./cache');
 const metrics = require('./metrics');
 
 function parseYear(raw) {
