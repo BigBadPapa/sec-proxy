@@ -137,6 +137,12 @@ async function processInfo(req, res) {
     
     // lastreport - последний earnings отчет (любой)
     if (rawField === 'lastreport') {
+      // ВРЕМЕННЫЙ ТЕСТ ДЛЯ AAPL
+      if (ticker === 'AAPL') {
+        const testValue = '=HYPERLINK("https://www.sec.gov/Archives/edgar/data/320193/000032019325000079/aapl-20250927.htm"; "Q4")&" "&HYPERLINK("https://www.sec.gov/ix?doc=/Archives/edgar/data/320193/000032019325000079/aapl-20250927.htm"; "2025")';
+        return res.json(formatResponse(true, testValue, false));
+      }
+      //коец теста.
       const cik = await common.getCIK(ticker);
       if (!cik) {
         return res.json(formatResponse(false, null, false, 'Тикер не найден'));
