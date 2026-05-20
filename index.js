@@ -1,36 +1,29 @@
-// ============ INDEX.JS - ТОЧКА ВХОДА (ROUTER) =============
-// Этот файл только запускает сервер и подключает endpoints.js
+// ============ INDEX.JS - ТОЧКА ВХОДА =============
 
 const express = require('express');
 const app = express();
 
-// ============ ПАРСИНГ POST ТЕЛА ============
+// Парсинг POST тела
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Подключаем все эндпоинты из endpoints.js
 const endpoints = require('./endpoints');
 
-// Монтируем все эндпоинты на корневой путь
 app.use('/', endpoints);
 
-// Health check (дублируем здесь для надёжности)
 app.get('/ping', (req, res) => {
   res.json({ status: 'alive', timestamp: new Date().toISOString() });
 });
 
-// Простой логгер для отладки
 app.use((req, res, next) => {
   console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`);
   next();
 });
 
-// Обработка 404 (не найден)
 app.use((req, res) => {
   res.status(404).json({ error: 'Endpoint not found', path: req.url, method: req.method });
 });
 
-// Обработка ошибок
 app.use((err, req, res, next) => {
   console.error(`[${new Date().toISOString()}] Error:`, err.message);
   res.status(500).json({ error: 'Internal server error', message: err.message });
@@ -42,7 +35,7 @@ app.listen(PORT, () => {
   console.log(`SEC Proxy server running on port ${PORT}`);
   console.log(`Health check: http://localhost:${PORT}/ping`);
   console.log(`Metrics: http://localhost:${PORT}/metrics/AAPL?metrics=revenue`);
-  console.log(`Info: http://localhost:${PORT}/info/AAPL`);
+  console.log(`Info: http://localhost:${PORT}/api/info (POST only)`);
   console.log(`Catalog: http://localhost:${PORT}/catalog`);
   console.log(`========================================`);
 });
