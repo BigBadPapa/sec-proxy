@@ -6,7 +6,6 @@ const router = express.Router();
 
 // Подключаем логику
 const metricsLogic = require('./edgar_metrics');
-const infoLogic = require('./edgar_info');
 const handler = require('./handler');
 const common = require('./edgar_common');
 
@@ -15,17 +14,31 @@ router.post('/api/edgar', handler.processEdgar);
 router.post('/api/info', handler.processInfo);
 
 // ============ 1. COMPANY TICKERS ============
-router.get('/company-tickers', infoLogic.getCompanyTickers);
-router.get('/company-tickers-mf', infoLogic.getCompanyTickersMF);
-router.get('/company-tickers-exchange', infoLogic.getCompanyTickersExchange);
+router.get('/company-tickers', (req, res) => {
+  res.status(501).json({ error: 'Not implemented yet - будет реализовано в будущем', endpoint: req.path });
+});
+router.get('/company-tickers-mf', (req, res) => {
+  res.status(501).json({ error: 'Not implemented yet - будет реализовано в будущем', endpoint: req.path });
+});
+router.get('/company-tickers-exchange', (req, res) => {
+  res.status(501).json({ error: 'Not implemented yet - будет реализовано в будущем', endpoint: req.path });
+});
 
 // ============ 2. SUBMISSIONS ============
-router.get('/submissions/:identifier', infoLogic.getSubmissions);
+router.get('/submissions/:identifier', (req, res) => {
+  res.status(501).json({ error: 'Not implemented yet - будет реализовано в будущем', endpoint: req.path });
+});
 
 // ============ 3. XBRL DATA ============
-router.get('/companyfacts/:identifier', infoLogic.getCompanyFacts);
-router.get('/companyconcept/:identifier/:taxonomy/:tag', infoLogic.getCompanyConcept);
-router.get('/frames/:taxonomy/:tag/:unit/:period', infoLogic.getFrames);
+router.get('/companyfacts/:identifier', (req, res) => {
+  res.status(501).json({ error: 'Not implemented yet - будет реализовано в будущем', endpoint: req.path });
+});
+router.get('/companyconcept/:identifier/:taxonomy/:tag', (req, res) => {
+  res.status(501).json({ error: 'Not implemented yet - будет реализовано в будущем', endpoint: req.path });
+});
+router.get('/frames/:taxonomy/:tag/:unit/:period', (req, res) => {
+  res.status(501).json({ error: 'Not implemented yet - будет реализовано в будущем', endpoint: req.path });
+});
 
 // ============ 4. FINANCIAL METRICS (КАСТОМНЫЕ) ============
 router.get('/metrics/:ticker', metricsLogic.getMetric);
@@ -33,10 +46,14 @@ router.get('/catalog', metricsLogic.getCatalog);
 router.get('/validate/:metric', metricsLogic.validateMetric);
 
 // ============ 5. COMPANY INFO (СТАТИКА) ============
-router.get('/info/:ticker', infoLogic.getInfo);
-router.get('/company-meta/:ticker', infoLogic.getCompanyMeta);
+router.get('/info/:ticker', (req, res) => {
+  res.status(501).json({ error: 'Not implemented yet - будет реализовано в будущем', endpoint: req.path });
+});
+router.get('/company-meta/:ticker', (req, res) => {
+  res.status(501).json({ error: 'Not implemented yet - будет реализовано в будущем', endpoint: req.path });
+});
 
-// ============ 6. ACTIONS (КОРПОРАТИВНЫЕ ДЕЙСТВИЯ) - ЗАГЛУШКИ ============
+// ============ 6. ACTIONS (КОРПОРАТИВНЫЕ ДЕЙСТВИЯ) ============
 router.get('/actions/reports/:ticker', (req, res) => {
   res.status(501).json({ error: 'Not implemented yet', endpoint: req.path });
 });
@@ -126,5 +143,8 @@ router.get('/version', (req, res) => {
 });
 router.get('/cache-status', common.getCacheStatus);
 router.post('/clear-cache', common.clearCache);
+router.get('/ping', (req, res) => {
+  res.json({ status: 'alive', timestamp: new Date().toISOString() });
+});
 
 module.exports = router;
