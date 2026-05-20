@@ -1,5 +1,4 @@
-// ============ EDGAR_COMMON.JS - ОБЩИЕ УТИЛИТЫ ДЛЯ ВСЕХ МОДУЛЕЙ ===========
-// Содержит функции, используемые metrics, handler и будущими модулями
+// ============ COMMON.JS - ОБЩИЕ УТИЛИТЫ ДЛЯ ВСЕХ МОДУЛЕЙ ==========
 
 const fetch = require('node-fetch');
 const catalogs = require('./catalogs');
@@ -122,29 +121,7 @@ function applyScale(value, scale) {
   }
 }
 
-// ============ 4. ФУНКЦИИ ДЛЯ КЭШИРОВАНИЯ ==========
-
-function isCacheValid(cached, ttl) {
-  return cached && (Date.now() - cached.time < ttl);
-}
-
-function getFromCache(map, key, ttl) {
-  if (!map.has(key)) return null;
-  const cached = map.get(key);
-  if (isCacheValid(cached, ttl)) return cached.data;
-  map.delete(key);
-  return null;
-}
-
-function setToCache(map, key, data, ttl, maxSize) {
-  if (map.size >= maxSize) {
-    const oldest = map.keys().next().value;
-    map.delete(oldest);
-  }
-  map.set(key, { data, time: Date.now() });
-}
-
-// ============ 5. НОРМАЛИЗАЦИЯ ==========
+// ============ 4. НОРМАЛИЗАЦИЯ ==========
 
 function normalizeTicker(ticker) {
   if (!ticker) return null;
@@ -175,7 +152,7 @@ function normalizeQuarter(value) {
   return undefined;
 }
 
-// ============ 6. РЕЗОЛВИНГ АЛИАСОВ ==========
+// ============ 5. РЕЗОЛВИНГ АЛИАСОВ ==========
 
 function resolveAlias(alias, context = 'metric') {
   if (!alias) return null;
@@ -187,17 +164,37 @@ function resolveAlias(alias, context = 'metric') {
     normalized = alias.toString().trim().toLowerCase();
   }
   
-  // Проверка прямого совпадения с каталогом (только для метрик)
   if (context === 'metric' && catalogs.METRICS_CATALOG[normalized]) {
     return normalized;
   }
   
-  // Поиск в едином словаре синонимов
   if (catalogs.ALIASES[normalized]) {
     return catalogs.ALIASES[normalized];
   }
   
   return null;
+}
+
+// ============ 6. КЭШ-УТИЛИТЫ ==========
+
+function isCacheValid(cached, ttl) {
+  return cached && (Date.now() - cached.time < ttl);
+}
+
+function getFromCache(map, key, ttl) {
+  if (!map.has(key)) return null;
+  const cached = map.get(key);
+  if (isCacheValid(cached, ttl)) return cached.data;
+  map.delete(key);
+  return null;
+}
+
+function setToCache(map, key, data, ttl, maxSize) {
+  if (map.size >= maxSize) {
+    const oldest = map.keys().next().value;
+    map.delete(oldest);
+  }
+  map.set(key, { data, time: Date.now() });
 }
 
 // ============ 7. HTTP С РЕТРАЯМИ ==========
@@ -357,13 +354,10 @@ async function clearCache(req, res) {
 // ============ 10. ЭКСПОРТ ==========
 
 module.exports = {
-  // Константы
   USER_AGENT,
   SEC_BASE,
   DATA_BASE,
   CACHE_CONFIG,
-  
-  // Кэш-переменные
   tickersCache,
   tickersCacheTime,
   cikCache,
@@ -372,8 +366,6 @@ module.exports = {
   submissionsCache,
   quarterParseCache,
   companyMetaCache,
-  
-  // Базовые утилиты
   log,
   safeDateValue,
   sortByEndDesc,
@@ -383,27 +375,17 @@ module.exports = {
   findQuarterlyReport,
   parseQuarterStringCached,
   applyScale,
-  
-  // Нормализация
   normalizeTicker,
   normalizeScale,
   normalizeQuarter,
-  
-  // Резолвинг алиасов
   resolveAlias,
-  
-  // Кэш-утилиты
   isCacheValid,
   getFromCache,
   setToCache,
-  
-  // HTTP и SEC API
   fetchWithRetry,
   getCIK,
   getCompanyFacts,
   getSubmissionsData,
-  
-  // Хендлеры
   getCacheStatus,
   clearCache
 };
