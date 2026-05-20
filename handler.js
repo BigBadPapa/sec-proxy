@@ -46,6 +46,21 @@ function formatResponse(success, data, isBatch = false, error = null) {
   }
 }
 
+// Формирует строку с гиперссылками для отчета (для GAS)
+function formatReportLinkForGas(report, cik) {
+  if (!report) return 'Н/Д';
+  
+  const htmlUrl = `https://www.sec.gov/Archives/edgar/data/${parseInt(cik)}/${report.accessionNumber}/${report.primaryDocument}`;
+  const xbrlUrl = `https://www.sec.gov/ix?doc=/Archives/edgar/data/${parseInt(cik)}/${report.accessionNumber}/${report.primaryDocument}`;
+  
+  const fpFormatted = report.fp;
+  const fyFormatted = report.fy;
+  
+  // Формируем строку с двумя гиперссылками для Google Sheets
+  // =HYPERLINK("htmlUrl"; "Q2")&" "&HYPERLINK("xbrlUrl"; "2026")
+  return `=HYPERLINK("${htmlUrl}"; "${fpFormatted}")&" "&HYPERLINK("${xbrlUrl}"; "${fyFormatted}")`;
+}
+
 async function processEdgar(req, res) {
   try {
     const { ticker: rawTicker, metric: rawMetric, year: rawYear, quarter: rawQuarter, scale: rawScale, compare: rawCompare } = req.body;
@@ -117,6 +132,62 @@ async function processInfo(req, res) {
     if (!ticker) {
       return res.json(formatResponse(false, null, false, 'Тикер не указан'));
     }
+    
+    // ============ ОБРАБОТКА СПЕЦИАЛЬНЫХ ПОЛЕЙ ============
+    
+    // lastreport - последний earnings отчет (любой)
+    if (rawField === 'lastreport') {
+      const cik = await common.getCIK(ticker);
+      if (!cik) {
+        return res.json(formatResponse(false, null, false, 'Тикер не найден'));
+      }
+      const report = await common.getLastReport(cik, 'all');
+      if (!report) {
+        return res.json(formatResponse(true, 'Н/Д', false));
+      }
+      const displayValue = formatReportLinkForGas(report, cik);
+      return res.json(formatResponse(true, displayValue, false));
+    }
+    
+    // lastreporta - последний годовой earnings отчет
+    if (rawField === 'lastreporta') {
+      const cik = await common.getCIK(ticker);
+      if (!cik) {
+        return res.json(formatResponse(false, null, false, 'Тикер не найден'));
+      }
+      const report = await common.getLastReport(cik, 'annual');
+      if (!report) {
+        return res.json(formatResponse(true, 'Н/Д', false));
+      }
+      const displayValue = formatReportLinkForGas(report, cik);
+      return res.json(formatResponse(true, displayValue, false));
+    }
+    
+    // lastreportq - последний квартальный earnings отчет
+    if (rawField === 'lastreportq') {
+      const cik = await common.getCIK(ticker);
+      if (!cik) {
+        return res.json(formatResponse(false, null, false, 'Тикер не найден'));
+      }
+      const report = await common.getLastReport(cik, 'quarterly');
+      if (!report) {
+        return res.json(formatResponse(true, 'Н/Д', false));
+      }
+      const displayValue = formatReportLinkForGas(report, cik);
+      return res.json(formatResponse(true, displayValue, false));
+    }
+    
+    // currency - валюта отчетности
+    if (rawField === 'currency') {
+      const cik = await common.getCIK(ticker);
+      if (!cik) {
+        return res.json(formatResponse(false, null, false, 'Тикер не найден'));
+      }
+      const currency = await common.getCompanyCurrency(cik);
+      return res.json(formatResponse(true, currency, false));
+    }
+    
+    // ============ ОБЫЧНАЯ ОБРАБОТКА INFO ============
     
     const { items: fieldsArray, isBatch } = parseStringArray(rawField);
     if (fieldsArray.length === 0) {
