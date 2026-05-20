@@ -1,10 +1,7 @@
 // ============ HANDLER.JS - ОБРАБОТЧИК ЗАПРОСОВ ОТ GAS ==========
-// Принимает сырые данные от GAS, парсит, вызывает нужную логику, форматирует ответ
 
-const common = require('./edgar_common');
-const metricsLogic = require('./edgar_metrics');
-
-// ============ 1. ПАРСЕРЫ ==========
+const common = require('./common');
+const metrics = require('./metrics');
 
 function parseTicker(raw) {
   return common.normalizeTicker(raw);
@@ -48,8 +45,6 @@ function parseStringArray(raw, defaultSeparator = '/') {
   return { items: itemsArray, isBatch };
 }
 
-// ============ 2. ФОРМАТИРОВАТЕЛЬ ОТВЕТА ДЛЯ GAS ==========
-
 function formatResponse(success, data, isBatch = false, error = null) {
   if (!success) {
     return { success: false, displayValue: error || 'Ошибка' };
@@ -61,8 +56,6 @@ function formatResponse(success, data, isBatch = false, error = null) {
     return { success: true, displayValue: data };
   }
 }
-
-// ============ 3. ОСНОВНЫЕ ОБРАБОТЧИКИ ==========
 
 async function processEdgar(req, res) {
   try {
@@ -111,7 +104,7 @@ async function processEdgar(req, res) {
     
     const results = [];
     for (const metric of resolvedMetrics) {
-      const value = metricsLogic.getMetricValue(factsData, metric, year, quarter, scale, ticker);
+      const value = metrics.getMetricValue(factsData, metric, year, quarter, scale, ticker);
       results.push(value !== null ? value : null);
     }
     
