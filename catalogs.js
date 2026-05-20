@@ -875,6 +875,16 @@ const ALIASES = {
   "пер акцию дивиденды": "dividendspershare",
   
   // ===== INFO поля (для EDGAR_INFO) =====
+  "lastreport": "lastreport",
+  "последнийотчет": "lastreport",
+  "lastreporta": "lastreporta",
+  "последнийгодовой": "lastreporta",
+  "последнийгодовойотчет": "lastreporta",
+  "lastreportq": "lastreportq",
+  "последнийквартальный": "lastreportq",
+  "последнийквартальныйотчет": "lastreportq",
+  "currency": "currency",
+  "валюта": "currency"
   "cik": "cik",
   "сик": "cik",
   "name": "name",
