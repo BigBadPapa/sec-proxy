@@ -884,7 +884,7 @@ const ALIASES = {
   "последнийквартальный": "lastreportq",
   "последнийквартальныйотчет": "lastreportq",
   "currency": "currency",
-  "валюта": "currency"
+  "валюта": "currency",
   "cik": "cik",
   "сик": "cik",
   "name": "name",
