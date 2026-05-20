@@ -1,6 +1,7 @@
-// ============ METRICS.JS - ЯДРО РАСЧЕТА ФИНАНСОВЫХ МЕТРИК ===========
+// ============ METRICS.JS - ЯДРО РАСЧЕТА ФИНАНСОВЫХ МЕТРИК ==========
 
 const common = require('./common');
+const cache = require('./cache');
 const catalogs = require('./catalogs');
 
 // ============ 1. КОНСТАНТЫ ==========
@@ -509,8 +510,8 @@ function getTTMValue(factsData, metricName, scale, ticker) {
 function getMetricValue(factsData, metric, year, quarterParam, scale, ticker) {
   const cacheKey = `${ticker}:${metric}:${year}:${quarterParam}`;
   
-  if (common.CACHE_CONFIG.metrics.enabled) {
-    const cached = common.getFromCache(common.metricsCache, cacheKey, common.CACHE_CONFIG.metrics.ttl);
+  if (cache.CACHE_CONFIG.metrics.enabled) {
+    const cached = cache.getFromCache(cache.metricsCache, cacheKey, cache.CACHE_CONFIG.metrics.ttl);
     if (cached !== null) {
       common.log(`getMetricValue: кэш HIT для ${cacheKey}, значение = ${cached}`);
       return cached !== null ? common.applyScale(cached, scale) : null;
@@ -527,8 +528,8 @@ function getMetricValue(factsData, metric, year, quarterParam, scale, ticker) {
     value = getMetricValueInternal(factsData, metric, year, quarterParam, scale, ticker);
   }
   
-  if (common.CACHE_CONFIG.metrics.enabled && value !== null) {
-    common.setToCache(common.metricsCache, cacheKey, value, common.CACHE_CONFIG.metrics.ttl, common.CACHE_CONFIG.metrics.maxSize);
+  if (cache.CACHE_CONFIG.metrics.enabled && value !== null) {
+    cache.setToCache(cache.metricsCache, cacheKey, value, cache.CACHE_CONFIG.metrics.ttl, cache.CACHE_CONFIG.metrics.maxSize);
   }
   
   common.log(`getMetricValue: результат = ${value}`);
