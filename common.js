@@ -1,4 +1,4 @@
-// ============ COMMON.JS - ОБЩИЕ УТИЛИТЫ ДЛЯ ВСЕХ МОДУЛЕЙ ==========
+// ============ COMMON.JS - ОБЩИЕ УТИЛИТЫ ДЛЯ ВСЕХ МОДУЛЕЙ ===========
 
 const fetch = require('node-fetch');
 const catalogs = require('./catalogs');
