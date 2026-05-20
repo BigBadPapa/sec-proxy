@@ -1,7 +1,8 @@
-// ============ DIRECT.JS - ОБРАБОТКА ПРЯМЫХ HTTP-ЗАПРОСОВ ==========
+// ============ API.JS - ОБРАБОТКА ПРЯМЫХ HTTP-ЗАПРОСОВ ==========
 // Содержит все хендлеры для прямых запросов (не через GAS)
 
 const common = require('./common');
+const cache = require('./cache');
 const metrics = require('./metrics');
 const catalogs = require('./catalogs');
 
@@ -269,8 +270,8 @@ async function getCompanyMeta(req, res) {
     const cik = await common.getCIK(ticker);
     if (!cik) return res.status(404).json({ error: 'Тикер не найден' });
     
-    if (common.CACHE_CONFIG.companyMeta.enabled) {
-      const cached = common.getFromCache(common.companyMetaCache, cik, common.CACHE_CONFIG.companyMeta.ttl);
+    if (cache.CACHE_CONFIG.companyMeta.enabled) {
+      const cached = cache.getFromCache(cache.companyMetaCache, cik, cache.CACHE_CONFIG.companyMeta.ttl);
       if (cached) return res.json(cached);
     }
     
@@ -287,8 +288,8 @@ async function getCompanyMeta(req, res) {
       sicDescription: subData.sicDescription || null
     };
     
-    if (common.CACHE_CONFIG.companyMeta.enabled) {
-      common.setToCache(common.companyMetaCache, cik, meta, common.CACHE_CONFIG.companyMeta.ttl, common.CACHE_CONFIG.companyMeta.maxSize);
+    if (cache.CACHE_CONFIG.companyMeta.enabled) {
+      cache.setToCache(cache.companyMetaCache, cik, meta, cache.CACHE_CONFIG.companyMeta.ttl, cache.CACHE_CONFIG.companyMeta.maxSize);
     }
     
     res.json(meta);
