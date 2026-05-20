@@ -1,7 +1,8 @@
 // ============ EDGAR_COMMON.JS - ОБЩИЕ УТИЛИТЫ ДЛЯ ВСЕХ МОДУЛЕЙ ===========
-// Содержит функции, используемые metrics, info и будущими модулями (ratios, reports)
+// Содержит функции, используемые metrics, handler и будущими модулями
 
 const fetch = require('node-fetch');
+const catalogs = require('./catalogs');
 
 // ============ 1. КОНСТАНТЫ ==========
 const USER_AGENT = 'GoogleSheetsSEC contact@example.com';
@@ -143,7 +144,63 @@ function setToCache(map, key, data, ttl, maxSize) {
   map.set(key, { data, time: Date.now() });
 }
 
-// ============ 5. HTTP С РЕТРАЯМИ ==========
+// ============ 5. НОРМАЛИЗАЦИЯ ==========
+
+function normalizeTicker(ticker) {
+  if (!ticker) return null;
+  return String(ticker).toUpperCase().trim().replace(/\./g, '-');
+}
+
+function normalizeScale(scale) {
+  if (!scale) return null;
+  const str = String(scale).toLowerCase().trim();
+  if (str === 'k' || str === 'т' || str === 'тысячи') return 'k';
+  if (str === 'kk' || str === 'м' || str === 'миллионы') return 'kk';
+  if (str === 'kkk' || str === 'млрд' || str === 'миллиарды') return 'kkk';
+  return null;
+}
+
+function normalizeQuarter(value) {
+  if (value === undefined || value === null) return undefined;
+  const str = String(value).toLowerCase().trim();
+  if (str === 'год' || str === 'годовой' || str === 'fy') return 'annual';
+  if (str === 'q1') return 'q1';
+  if (str === 'q2') return 'q2';
+  if (str === 'q3') return 'q3';
+  if (str === 'q4') return 'q4';
+  if (str === '1q') return '1q';
+  if (str === '2q') return '2q';
+  if (str === '3q') return '3q';
+  if (str === '4q') return '4q';
+  return undefined;
+}
+
+// ============ 6. РЕЗОЛВИНГ АЛИАСОВ ==========
+
+function resolveAlias(alias, context = 'metric') {
+  if (!alias) return null;
+  
+  let normalized;
+  if (context === 'metric') {
+    normalized = alias.toString().trim().toLowerCase().replace(/[\s_-]/g, '');
+  } else {
+    normalized = alias.toString().trim().toLowerCase();
+  }
+  
+  // Проверка прямого совпадения с каталогом (только для метрик)
+  if (context === 'metric' && catalogs.METRICS_CATALOG[normalized]) {
+    return normalized;
+  }
+  
+  // Поиск в едином словаре синонимов
+  if (catalogs.ALIASES[normalized]) {
+    return catalogs.ALIASES[normalized];
+  }
+  
+  return null;
+}
+
+// ============ 7. HTTP С РЕТРАЯМИ ==========
 
 async function fetchWithRetry(url, options, maxRetries = 3) {
   for (let i = 0; i < maxRetries; i++) {
@@ -169,15 +226,16 @@ async function fetchWithRetry(url, options, maxRetries = 3) {
   }
 }
 
-// ============ 6. ФУНКЦИИ ДЛЯ SEC API ==========
+// ============ 8. ФУНКЦИИ ДЛЯ SEC API ==========
 
 async function getCIK(ticker) {
-  log(`getCIK: поиск CIK для тикера ${ticker}`);
+  const normalizedTicker = normalizeTicker(ticker);
+  log(`getCIK: поиск CIK для тикера ${normalizedTicker}`);
   
   if (CACHE_CONFIG.cik.enabled) {
-    const cached = getFromCache(cikCache, ticker, CACHE_CONFIG.cik.ttl);
+    const cached = getFromCache(cikCache, normalizedTicker, CACHE_CONFIG.cik.ttl);
     if (cached !== null) {
-      log(`getCIK: кэш HIT для ${ticker} -> ${cached}`);
+      log(`getCIK: кэш HIT для ${normalizedTicker} -> ${cached}`);
       return cached;
     }
   }
@@ -194,10 +252,10 @@ async function getCIK(ticker) {
     log(`getCIK: tickersCache обновлён, записей: ${Object.keys(tickersCache).length}`);
   }
   
-  const upperTicker = ticker.toUpperCase();
+  const upperTicker = normalizedTicker.toUpperCase();
   const entry = Object.values(tickersCache).find(t => t.ticker === upperTicker);
   if (!entry) {
-    log(`getCIK: тикер ${ticker} не найден`);
+    log(`getCIK: тикер ${normalizedTicker} не найден`);
     return null;
   }
   
@@ -205,7 +263,7 @@ async function getCIK(ticker) {
   log(`getCIK: найден CIK = ${cik}`);
   
   if (CACHE_CONFIG.cik.enabled && cik) {
-    setToCache(cikCache, ticker, cik, CACHE_CONFIG.cik.ttl, CACHE_CONFIG.cik.maxSize);
+    setToCache(cikCache, normalizedTicker, cik, CACHE_CONFIG.cik.ttl, CACHE_CONFIG.cik.maxSize);
   }
   
   return cik;
@@ -263,7 +321,7 @@ async function getSubmissionsData(cik) {
   return data;
 }
 
-// ============ 7. ХЕНДЛЕРЫ ДЛЯ УПРАВЛЕНИЯ КЭШЕМ ==========
+// ============ 9. ХЕНДЛЕРЫ ДЛЯ УПРАВЛЕНИЯ КЭШЕМ ==========
 
 async function getCacheStatus(req, res) {
   log('GET /cache-status');
@@ -296,13 +354,16 @@ async function clearCache(req, res) {
   res.json({ message: `Кэш ${key} очищен` });
 }
 
-// ============ 8. ЭКСПОРТ ==========
+// ============ 10. ЭКСПОРТ ==========
 
 module.exports = {
+  // Константы
   USER_AGENT,
   SEC_BASE,
   DATA_BASE,
   CACHE_CONFIG,
+  
+  // Кэш-переменные
   tickersCache,
   tickersCacheTime,
   cikCache,
@@ -311,6 +372,8 @@ module.exports = {
   submissionsCache,
   quarterParseCache,
   companyMetaCache,
+  
+  // Базовые утилиты
   log,
   safeDateValue,
   sortByEndDesc,
@@ -320,13 +383,27 @@ module.exports = {
   findQuarterlyReport,
   parseQuarterStringCached,
   applyScale,
+  
+  // Нормализация
+  normalizeTicker,
+  normalizeScale,
+  normalizeQuarter,
+  
+  // Резолвинг алиасов
+  resolveAlias,
+  
+  // Кэш-утилиты
   isCacheValid,
   getFromCache,
   setToCache,
+  
+  // HTTP и SEC API
   fetchWithRetry,
   getCIK,
   getCompanyFacts,
   getSubmissionsData,
+  
+  // Хендлеры
   getCacheStatus,
   clearCache
 };
