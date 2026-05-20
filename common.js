@@ -1,6 +1,7 @@
-// ============ COMMON.JS - ОБЩИЕ УТИЛИТЫ ДЛЯ ВСЕХ МОДУЛЕЙ ===========
+// ============ COMMON.JS - ОБЩИЕ УТИЛИТЫ ==========
 
 const fetch = require('node-fetch');
+const cache = require('./cache');
 const catalogs = require('./catalogs');
 
 // ============ 1. КОНСТАНТЫ ==========
@@ -8,29 +9,7 @@ const USER_AGENT = 'GoogleSheetsSEC contact@example.com';
 const SEC_BASE = 'https://www.sec.gov';
 const DATA_BASE = 'https://data.sec.gov';
 
-// Единый конфиг кэшей для всех модулей
-const CACHE_CONFIG = {
-  tickers: { enabled: true, ttl: 24 * 60 * 60 * 1000, maxSize: 1 },
-  cik: { enabled: true, ttl: 24 * 60 * 60 * 1000, maxSize: 500 },
-  facts: { enabled: true, ttl: 6 * 60 * 60 * 1000, maxSize: 20 },
-  submissions: { enabled: true, ttl: 24 * 60 * 60 * 1000, maxSize: 20 },
-  metrics: { enabled: true, ttl: 5 * 60 * 1000, maxSize: 1000 },
-  quarterParse: { enabled: true, ttl: Infinity, maxSize: 50 },
-  companyMeta: { enabled: true, ttl: 24 * 60 * 60 * 1000, maxSize: 500 }
-};
-
-// ============ 2. ПЕРЕМЕННЫЕ КЭШЕЙ ==========
-let tickersCache = null;
-let tickersCacheTime = 0;
-
-const cikCache = new Map();
-const factsCache = new Map();
-const metricsCache = new Map();
-const submissionsCache = new Map();
-const quarterParseCache = new Map();
-const companyMetaCache = new Map();
-
-// ============ 3. БАЗОВЫЕ УТИЛИТЫ ==========
+// ============ 2. БАЗОВЫЕ УТИЛИТЫ ==========
 
 function log(message, data = null) {
   const timestamp = new Date().toISOString();
@@ -86,8 +65,8 @@ function findQuarterlyReport(values, year, fp, forms = ['10-Q', '6-K']) {
 function parseQuarterStringCached(quarterStr) {
   if (!quarterStr || typeof quarterStr !== 'string') return null;
   
-  if (CACHE_CONFIG.quarterParse.enabled) {
-    const cached = quarterParseCache.get(quarterStr);
+  if (cache.CACHE_CONFIG.quarterParse.enabled) {
+    const cached = cache.getFromCache(cache.quarterParseCache, quarterStr, cache.CACHE_CONFIG.quarterParse.ttl);
     if (cached) return cached;
   }
   
@@ -103,8 +82,8 @@ function parseQuarterStringCached(quarterStr) {
   else if (lower === '3q') result = { type: 'ytd', num: 3 };
   else if (lower === '4q') result = { type: 'ytd', num: 4 };
   
-  if (result && CACHE_CONFIG.quarterParse.enabled && quarterParseCache.size < CACHE_CONFIG.quarterParse.maxSize) {
-    quarterParseCache.set(quarterStr, result);
+  if (result && cache.CACHE_CONFIG.quarterParse.enabled && cache.quarterParseCache.size < cache.CACHE_CONFIG.quarterParse.maxSize) {
+    cache.setToCache(cache.quarterParseCache, quarterStr, result, cache.CACHE_CONFIG.quarterParse.ttl, cache.CACHE_CONFIG.quarterParse.maxSize);
   }
   
   return result;
@@ -121,7 +100,7 @@ function applyScale(value, scale) {
   }
 }
 
-// ============ 4. НОРМАЛИЗАЦИЯ ==========
+// ============ 3. НОРМАЛИЗАЦИЯ ==========
 
 function normalizeTicker(ticker) {
   if (!ticker) return null;
@@ -152,7 +131,7 @@ function normalizeQuarter(value) {
   return undefined;
 }
 
-// ============ 5. РЕЗОЛВИНГ АЛИАСОВ ==========
+// ============ 4. РЕЗОЛВИНГ АЛИАСОВ ==========
 
 function resolveAlias(alias, context = 'metric') {
   if (!alias) return null;
@@ -175,29 +154,7 @@ function resolveAlias(alias, context = 'metric') {
   return null;
 }
 
-// ============ 6. КЭШ-УТИЛИТЫ ==========
-
-function isCacheValid(cached, ttl) {
-  return cached && (Date.now() - cached.time < ttl);
-}
-
-function getFromCache(map, key, ttl) {
-  if (!map.has(key)) return null;
-  const cached = map.get(key);
-  if (isCacheValid(cached, ttl)) return cached.data;
-  map.delete(key);
-  return null;
-}
-
-function setToCache(map, key, data, ttl, maxSize) {
-  if (map.size >= maxSize) {
-    const oldest = map.keys().next().value;
-    map.delete(oldest);
-  }
-  map.set(key, { data, time: Date.now() });
-}
-
-// ============ 7. HTTP С РЕТРАЯМИ ==========
+// ============ 5. HTTP С РЕТРАЯМИ ==========
 
 async function fetchWithRetry(url, options, maxRetries = 3) {
   for (let i = 0; i < maxRetries; i++) {
@@ -223,21 +180,24 @@ async function fetchWithRetry(url, options, maxRetries = 3) {
   }
 }
 
-// ============ 8. ФУНКЦИИ ДЛЯ SEC API ==========
+// ============ 6. ФУНКЦИИ ДЛЯ SEC API ==========
 
 async function getCIK(ticker) {
   const normalizedTicker = normalizeTicker(ticker);
   log(`getCIK: поиск CIK для тикера ${normalizedTicker}`);
   
-  if (CACHE_CONFIG.cik.enabled) {
-    const cached = getFromCache(cikCache, normalizedTicker, CACHE_CONFIG.cik.ttl);
+  if (cache.CACHE_CONFIG.cik.enabled) {
+    const cached = cache.getFromCache(cache.cikCache, normalizedTicker, cache.CACHE_CONFIG.cik.ttl);
     if (cached !== null) {
       log(`getCIK: кэш HIT для ${normalizedTicker} -> ${cached}`);
       return cached;
     }
   }
   
-  if (tickersCache && isCacheValid({ time: tickersCacheTime }, CACHE_CONFIG.tickers.ttl)) {
+  let tickersCache = cache.tickersCache;
+  let tickersCacheTime = cache.tickersCacheTime;
+  
+  if (tickersCache && cache.isCacheValid({ time: tickersCacheTime }, cache.CACHE_CONFIG.tickers.ttl)) {
     log(`getCIK: tickersCache HIT`);
   } else {
     log(`getCIK: tickersCache MISS, загружаем company_tickers.json`);
@@ -245,7 +205,8 @@ async function getCIK(ticker) {
       headers: { 'User-Agent': USER_AGENT }
     });
     tickersCache = await response.json();
-    tickersCacheTime = Date.now();
+    cache.tickersCache = tickersCache;
+    cache.tickersCacheTime = Date.now();
     log(`getCIK: tickersCache обновлён, записей: ${Object.keys(tickersCache).length}`);
   }
   
@@ -259,8 +220,8 @@ async function getCIK(ticker) {
   const cik = entry.cik_str.toString().padStart(10, '0');
   log(`getCIK: найден CIK = ${cik}`);
   
-  if (CACHE_CONFIG.cik.enabled && cik) {
-    setToCache(cikCache, normalizedTicker, cik, CACHE_CONFIG.cik.ttl, CACHE_CONFIG.cik.maxSize);
+  if (cache.CACHE_CONFIG.cik.enabled && cik) {
+    cache.setToCache(cache.cikCache, normalizedTicker, cik, cache.CACHE_CONFIG.cik.ttl, cache.CACHE_CONFIG.cik.maxSize);
   }
   
   return cik;
@@ -269,8 +230,8 @@ async function getCIK(ticker) {
 async function getCompanyFacts(cik) {
   log(`getCompanyFacts: загрузка companyfacts для CIK ${cik}`);
   
-  if (CACHE_CONFIG.facts.enabled) {
-    const cached = getFromCache(factsCache, cik, CACHE_CONFIG.facts.ttl);
+  if (cache.CACHE_CONFIG.facts.enabled) {
+    const cached = cache.getFromCache(cache.factsCache, cik, cache.CACHE_CONFIG.facts.ttl);
     if (cached !== null) {
       log(`getCompanyFacts: кэш HIT для ${cik}`);
       return cached;
@@ -289,8 +250,8 @@ async function getCompanyFacts(cik) {
   
   const data = await response.json();
   
-  if (CACHE_CONFIG.facts.enabled) {
-    setToCache(factsCache, cik, data, CACHE_CONFIG.facts.ttl, CACHE_CONFIG.facts.maxSize);
+  if (cache.CACHE_CONFIG.facts.enabled) {
+    cache.setToCache(cache.factsCache, cik, data, cache.CACHE_CONFIG.facts.ttl, cache.CACHE_CONFIG.facts.maxSize);
   }
   
   log(`getCompanyFacts: загружено и закэшировано`);
@@ -300,8 +261,8 @@ async function getCompanyFacts(cik) {
 async function getSubmissionsData(cik) {
   log(`getSubmissionsData: загрузка submissions для CIK ${cik}`);
   
-  if (CACHE_CONFIG.submissions.enabled) {
-    const cached = getFromCache(submissionsCache, cik, CACHE_CONFIG.submissions.ttl);
+  if (cache.CACHE_CONFIG.submissions.enabled) {
+    const cached = cache.getFromCache(cache.submissionsCache, cik, cache.CACHE_CONFIG.submissions.ttl);
     if (cached !== null) return cached;
   }
   
@@ -311,61 +272,19 @@ async function getSubmissionsData(cik) {
   
   const data = await response.json();
   
-  if (CACHE_CONFIG.submissions.enabled) {
-    setToCache(submissionsCache, cik, data, CACHE_CONFIG.submissions.ttl, CACHE_CONFIG.submissions.maxSize);
+  if (cache.CACHE_CONFIG.submissions.enabled) {
+    cache.setToCache(cache.submissionsCache, cik, data, cache.CACHE_CONFIG.submissions.ttl, cache.CACHE_CONFIG.submissions.maxSize);
   }
   
   return data;
 }
 
-// ============ 9. ХЕНДЛЕРЫ ДЛЯ УПРАВЛЕНИЯ КЭШЕМ ==========
-
-async function getCacheStatus(req, res) {
-  log('GET /cache-status');
-  res.json({
-    tickersCache: tickersCache ? `активен, записей: ${Object.keys(tickersCache).length}` : 'пуст',
-    cikCache: { size: cikCache.size, maxSize: CACHE_CONFIG.cik.maxSize },
-    submissionsCache: { size: submissionsCache.size, maxSize: CACHE_CONFIG.submissions.maxSize },
-    factsCache: { size: factsCache.size, maxSize: CACHE_CONFIG.facts.maxSize },
-    metricsCache: { size: metricsCache.size, maxSize: CACHE_CONFIG.metrics.maxSize },
-    companyMetaCache: { size: companyMetaCache.size, maxSize: CACHE_CONFIG.companyMeta.maxSize },
-    quarterParseCache: { size: quarterParseCache.size, maxSize: CACHE_CONFIG.quarterParse.maxSize }
-  });
-}
-
-async function clearCache(req, res) {
-  const key = req.query.key || 'all';
-  log(`POST /clear-cache?key=${key}`);
-  
-  if (key === 'all' || key === 'cik') cikCache.clear();
-  if (key === 'all' || key === 'submissions') submissionsCache.clear();
-  if (key === 'all' || key === 'facts') factsCache.clear();
-  if (key === 'all' || key === 'metrics') metricsCache.clear();
-  if (key === 'all' || key === 'meta') companyMetaCache.clear();
-  if (key === 'all' || key === 'quarterParse') quarterParseCache.clear();
-  if (key === 'all' || key === 'tickers') {
-    tickersCache = null;
-    tickersCacheTime = 0;
-  }
-  
-  res.json({ message: `Кэш ${key} очищен` });
-}
-
-// ============ 10. ЭКСПОРТ ==========
+// ============ 7. ЭКСПОРТ ==========
 
 module.exports = {
   USER_AGENT,
   SEC_BASE,
   DATA_BASE,
-  CACHE_CONFIG,
-  tickersCache,
-  tickersCacheTime,
-  cikCache,
-  factsCache,
-  metricsCache,
-  submissionsCache,
-  quarterParseCache,
-  companyMetaCache,
   log,
   safeDateValue,
   sortByEndDesc,
@@ -379,13 +298,8 @@ module.exports = {
   normalizeScale,
   normalizeQuarter,
   resolveAlias,
-  isCacheValid,
-  getFromCache,
-  setToCache,
   fetchWithRetry,
   getCIK,
   getCompanyFacts,
-  getSubmissionsData,
-  getCacheStatus,
-  clearCache
+  getSubmissionsData
 };
