@@ -1,4 +1,4 @@
-// ============ COMMON.JS - ОБЩИЕ УТИЛИТЫ ==========
+// ============ COMMON.JS - ОБЩИЕ УТИЛИТЫ ===========
 
 const fetch = require('node-fetch');
 const cache = require('./cache');
