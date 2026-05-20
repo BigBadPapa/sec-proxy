@@ -281,12 +281,6 @@ async function getSubmissionsData(cik) {
 
 // ============ 7. ФУНКЦИИ ДЛЯ ОТЧЕТОВ ==========
 
-/**
- * Получает последний отчет указанного типа
- * @param {string} cik - CIK компании
- * @param {string} type - 'all', 'annual', 'quarterly'
- * @returns {Object|null} - Объект с данными отчета или null
- */
 async function getLastReport(cik, type = 'all') {
   const subData = await getSubmissionsData(cik);
   if (!subData || !subData.filings || !subData.filings.recent) {
@@ -295,13 +289,13 @@ async function getLastReport(cik, type = 'all') {
   }
   
   const recent = subData.filings.recent;
-  const forms = recent.form;
-  const accessionNumbers = recent.accessionNumber;
-  const filingDates = recent.filingDate;
-  const reportDates = recent.reportDate;
-  const primaryDocuments = recent.primaryDocument;
-  const fy = recent.fy;
-  const fp = recent.fp;
+  const forms = recent.form || [];
+  const accessionNumbers = recent.accessionNumber || [];
+  const filingDates = recent.filingDate || [];
+  const reportDates = recent.reportDate || [];
+  const primaryDocuments = recent.primaryDocument || [];
+  const fy = recent.fy || [];
+  const fp = recent.fp || [];
   
   // Определяем допустимые формы в зависимости от типа
   let allowedForms = [];
@@ -318,6 +312,14 @@ async function getLastReport(cik, type = 'all') {
     const form = forms[i];
     if (!allowedForms.includes(form)) continue;
     
+    // Проверяем, что все необходимые поля существуют
+    const fpValue = fp[i];
+    const fyValue = fy[i];
+    const accessionNumberRaw = accessionNumbers[i];
+    const primaryDocument = primaryDocuments[i];
+    
+    if (!fpValue || !fyValue || !accessionNumberRaw || !primaryDocument) continue;
+    
     // Для 6-K нужна дополнительная проверка: должен быть reportDate (финансовый отчет)
     if (form === '6-K') {
       const reportDate = reportDates[i];
@@ -325,25 +327,20 @@ async function getLastReport(cik, type = 'all') {
     }
     
     // Отбираем только отчеты с financial quarter (fp начинается на Q)
-    const fpValue = fp[i];
-    if (!fpValue || !fpValue.startsWith('Q')) continue;
+    if (!fpValue.startsWith('Q')) continue;
     
     // Все проверки пройдены
-    const accessionNumberRaw = accessionNumbers[i];
     const accessionNumber = accessionNumberRaw.replace(/-/g, '');
-    const primaryDocument = primaryDocuments[i];
-    const fyValue = fy[i];
-    const fpValueFormatted = fpValue;
     
     return {
       form: form,
       fy: fyValue,
-      fp: fpValueFormatted,
+      fp: fpValue,
       accessionNumber: accessionNumber,
       accessionNumberRaw: accessionNumberRaw,
       primaryDocument: primaryDocument,
-      filingDate: filingDates[i],
-      reportDate: reportDates[i]
+      filingDate: filingDates[i] || null,
+      reportDate: reportDates[i] || null
     };
   }
   
@@ -351,11 +348,6 @@ async function getLastReport(cik, type = 'all') {
   return null;
 }
 
-/**
- * Получает валюту отчетности компании
- * @param {string} cik - CIK компании
- * @returns {string} - Код валюты (USD, EUR, и т.д.) или 'N/A'
- */
 async function getCompanyCurrency(cik) {
   const factsData = await getCompanyFacts(cik);
   if (!factsData || !factsData.facts) {
