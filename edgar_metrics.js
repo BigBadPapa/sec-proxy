@@ -1,8 +1,8 @@
-// ============ EDGAR_METRICS.JS - ЛОГИКА ДЛЯ /METRICS ЭНДПОИНТОВ ===========
-// Этот файл содержит ТОЛЬКО логику метрик, без дублирования общих утилит
+// ============ EDGAR_METRICS.JS - ЛОГИКА ДЛЯ /METRICS ЭНДПОИНТОВ ==========
+// Этот файл содержит логику финансовых метрик
 
-const catalogs = require('./catalogs');
 const common = require('./edgar_common');
+const catalogs = require('./catalogs');
 
 // ============ 1. КОНСТАНТЫ (СПЕЦИФИЧНЫЕ ДЛЯ МЕТРИК) ==========
 
@@ -19,22 +19,7 @@ const durationCache = new Map();      // Кэш для разницы в дня�
 const collectAllTagValuesCache = new Map();  // Кэш для collectAllTagValues
 const getMetricValuesArrayCache = new Map(); // Кэш для getMetricValuesArray
 
-// ============ 3. ФУНКЦИЯ РАЗРЕШЕНИЯ АЛИАСОВ ==========
-
-function resolveMetric(alias) {
-  if (!alias) return null;
-  const normalized = alias.toString().trim().toLowerCase().replace(/[\s_-]/g, '');
-  
-  // Прямое совпадение с каталогом
-  if (catalogs.METRICS_CATALOG[normalized]) return normalized;
-  
-  // Поиск в едином словаре синонимов
-  if (catalogs.ALIASES[normalized]) return catalogs.ALIASES[normalized];
-  
-  return null;
-}
-
-// ============ 4. СПЕЦИФИЧНЫЕ ДЛЯ МЕТРИК УТИЛИТЫ ==========
+// ============ 3. СПЕЦИФИЧНЫЕ ДЛЯ МЕТРИК УТИЛИТЫ ==========
 
 function getDaysDifference(start, end) {
   return (new Date(end) - new Date(start)) / (1000 * 60 * 60 * 24);
@@ -552,7 +537,7 @@ function getMetricValue(factsData, metric, year, quarterParam, scale, ticker) {
   return value !== null ? common.applyScale(value, scale) : null;
 }
 
-// ============ 5. ОСНОВНЫЕ ФУНКЦИИ (ХЭНДЛЕРЫ ДЛЯ ЭНДПОИНТОВ) ==========
+// ============ 4. ОСНОВНЫЕ ФУНКЦИИ (ХЭНДЛЕРЫ ДЛЯ ЭНДПОИНТОВ) ==========
 
 async function getMetric(req, res) {
   const tickerRaw = req.params.ticker;
@@ -560,10 +545,7 @@ async function getMetric(req, res) {
   const quarterRaw = req.query.quarter !== undefined ? String(req.query.quarter) : undefined;
   const scale = common.normalizeScale(req.query.scale);
   
-  // Нормализация тикера
   const ticker = common.normalizeTicker(tickerRaw);
-  
-  // Нормализация квартала
   const quarter = common.normalizeQuarter(quarterRaw);
   
   common.log(`GET /metrics/${ticker}?year=${year}&quarter=${quarter}&scale=${scale}`);
@@ -582,7 +564,7 @@ async function getMetric(req, res) {
     const notFound = [];
     
     for (const m of metricsList) {
-      const resolved = resolveMetric(m);
+      const resolved = common.resolveAlias(m, 'metric');
       if (resolved) {
         resolvedMetrics.push(resolved);
       } else {
@@ -654,7 +636,7 @@ async function getCatalog(req, res) {
 async function validateMetric(req, res) {
   common.log(`GET /validate/${req.params.metric}`);
   try {
-    const resolved = resolveMetric(req.params.metric);
+    const resolved = common.resolveAlias(req.params.metric, 'metric');
     if (!resolved) {
       const available = Object.keys(catalogs.METRICS_CATALOG).slice(0, 20).join(', ');
       return res.status(404).json({ 
@@ -674,7 +656,7 @@ async function validateMetric(req, res) {
   }
 }
 
-// ============ 6. ЭКСПОРТ ФУНКЦИЙ ==========
+// ============ 5. ЭКСПОРТ ФУНКЦИЙ ==========
 
 module.exports = {
   getMetric,
