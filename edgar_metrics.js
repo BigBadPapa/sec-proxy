@@ -1,25 +1,23 @@
-// ============ EDGAR_METRICS.JS - ЛОГИКА ДЛЯ /METRICS ЭНДПОИНТОВ ==========
-// Этот файл содержит логику финансовых метрик
+// ============ METRICS.JS - ЯДРО РАСЧЕТА ФИНАНСОВЫХ МЕТРИК ==========
 
-const common = require('./edgar_common');
+const common = require('./common');
 const catalogs = require('./catalogs');
 
-// ============ 1. КОНСТАНТЫ (СПЕЦИФИЧНЫЕ ДЛЯ МЕТРИК) ==========
+// ============ 1. КОНСТАНТЫ ==========
 
-// Константы для длительности кварталов (в днях) - эвристика для metrics
 const QUARTER_DAYS = {
-  1: { min: 60, max: 120 },   // Q1: 3 месяца
-  2: { min: 150, max: 210 },  // Q2: 6 месяцев (YTD)
-  3: { min: 240, max: 300 },  // Q3: 9 месяцев (YTD)
-  4: { min: 350, max: 370 }   // Q4: 12 месяцев
+  1: { min: 60, max: 120 },
+  2: { min: 150, max: 210 },
+  3: { min: 240, max: 300 },
+  4: { min: 350, max: 370 }
 };
 
-// ============ 2. ПЕРЕМЕННЫЕ КЭШЕЙ (СПЕЦИФИЧНЫЕ ДЛЯ МЕТРИК) ==========
-const durationCache = new Map();      // Кэш для разницы в днях
-const collectAllTagValuesCache = new Map();  // Кэш для collectAllTagValues
-const getMetricValuesArrayCache = new Map(); // Кэш для getMetricValuesArray
+// ============ 2. КЭШ-ПЕРЕМЕННЫЕ ==========
+const durationCache = new Map();
+const collectAllTagValuesCache = new Map();
+const getMetricValuesArrayCache = new Map();
 
-// ============ 3. СПЕЦИФИЧНЫЕ ДЛЯ МЕТРИК УТИЛИТЫ ==========
+// ============ 3. ВНУТРЕННИЕ УТИЛИТЫ ==========
 
 function getDaysDifference(start, end) {
   return (new Date(end) - new Date(start)) / (1000 * 60 * 60 * 24);
@@ -144,7 +142,6 @@ function getValueFromTag(tagData, metricName, year, quarterParam, isBalanceMetri
     sortedValues = common.sortByStartDesc(values);
   }
   
-  // Годовой отчёт (включая 4q)
   if (year !== undefined && (quarterParam === undefined || quarterParam === 0 || quarterParam === 'annual' || quarterParam === 'год' || quarterParam === '4q')) {
     let annual = null;
     for (const v of sortedValues) {
@@ -164,7 +161,6 @@ function getValueFromTag(tagData, metricName, year, quarterParam, isBalanceMetri
     }
   }
   
-  // Квартальные данные
   else if (year !== undefined && quarterParam) {
     const quarterInfo = common.parseQuarterStringCached(quarterParam);
     if (!quarterInfo) {
@@ -508,6 +504,8 @@ function getTTMValue(factsData, metricName, scale, ticker) {
   return common.applyScale(sum, scale);
 }
 
+// ============ 4. ОСНОВНАЯ ПУБЛИЧНАЯ ФУНКЦИЯ ==========
+
 function getMetricValue(factsData, metric, year, quarterParam, scale, ticker) {
   const cacheKey = `${ticker}:${metric}:${year}:${quarterParam}`;
   
@@ -537,131 +535,9 @@ function getMetricValue(factsData, metric, year, quarterParam, scale, ticker) {
   return value !== null ? common.applyScale(value, scale) : null;
 }
 
-// ============ 4. ОСНОВНЫЕ ФУНКЦИИ (ХЭНДЛЕРЫ ДЛЯ ЭНДПОИНТОВ) ==========
-
-async function getMetric(req, res) {
-  const tickerRaw = req.params.ticker;
-  const year = req.query.year ? parseInt(req.query.year) : undefined;
-  const quarterRaw = req.query.quarter !== undefined ? String(req.query.quarter) : undefined;
-  const scale = common.normalizeScale(req.query.scale);
-  
-  const ticker = common.normalizeTicker(tickerRaw);
-  const quarter = common.normalizeQuarter(quarterRaw);
-  
-  common.log(`GET /metrics/${ticker}?year=${year}&quarter=${quarter}&scale=${scale}`);
-  
-  try {
-    let rawMetrics = req.query.metrics || req.query.metric;
-    if (!rawMetrics) {
-      return res.status(400).json({ 
-        error: 'Укажите metric или metrics',
-        hint: 'Используйте /catalog для списка метрик'
-      });
-    }
-    
-    const metricsList = rawMetrics.split('/').map(m => m.trim());
-    const resolvedMetrics = [];
-    const notFound = [];
-    
-    for (const m of metricsList) {
-      const resolved = common.resolveAlias(m, 'metric');
-      if (resolved) {
-        resolvedMetrics.push(resolved);
-      } else {
-        notFound.push(m);
-      }
-    }
-    
-    if (resolvedMetrics.length === 0) {
-      return res.status(404).json({
-        error: 'Метрики не найдены',
-        notFound: notFound,
-        available: Object.keys(catalogs.METRICS_CATALOG).slice(0, 20).join(', ') + '...',
-        totalAvailable: Object.keys(catalogs.METRICS_CATALOG).length
-      });
-    }
-    
-    const cik = await common.getCIK(ticker);
-    if (!cik) {
-      common.log(`getCIK вернул null для тикера ${ticker}`);
-      return res.status(404).json({ error: 'Тикер не найден' });
-    }
-    
-    const factsData = await common.getCompanyFacts(cik);
-    if (!factsData) {
-      common.log(`getCompanyFacts вернул null для CIK ${cik}`);
-      return res.status(500).json({ error: 'Ошибка получения данных' });
-    }
-    
-    const results = {};
-    for (const metric of resolvedMetrics) {
-      const value = getMetricValue(factsData, metric, year, quarter, scale, ticker);
-      results[metric] = value !== null ? value : null;
-    }
-    
-    res.json({
-      ticker: ticker,
-      year: year || null,
-      quarter: quarter || null,
-      scale: scale,
-      metrics: results,
-      notFound: notFound.length > 0 ? notFound : undefined
-    });
-  } catch (error) {
-    common.log(`GET /metrics error: ${error.message}`);
-    res.status(500).json({ error: error.message });
-  }
-}
-
-async function getCatalog(req, res) {
-  common.log('GET /catalog');
-  try {
-    const list = [];
-    for (const [key, val] of Object.entries(catalogs.METRICS_CATALOG)) {
-      list.push({
-        alias: key,
-        ru: val.ru,
-        category: val.category,
-        ttm: val.ttm,
-        tags: val.tags
-      });
-    }
-    res.json({ metrics: list, count: list.length });
-  } catch (error) {
-    common.log(`GET /catalog error: ${error.message}`);
-    res.status(500).json({ error: error.message });
-  }
-}
-
-async function validateMetric(req, res) {
-  common.log(`GET /validate/${req.params.metric}`);
-  try {
-    const resolved = common.resolveAlias(req.params.metric, 'metric');
-    if (!resolved) {
-      const available = Object.keys(catalogs.METRICS_CATALOG).slice(0, 20).join(', ');
-      return res.status(404).json({ 
-        error: 'Метрика не найдена',
-        available: available,
-        count: Object.keys(catalogs.METRICS_CATALOG).length
-      });
-    }
-    res.json({ 
-      valid: true, 
-      metric: resolved,
-      info: catalogs.METRICS_CATALOG[resolved]
-    });
-  } catch (error) {
-    common.log(`GET /validate error: ${error.message}`);
-    res.status(500).json({ error: error.message });
-  }
-}
-
-// ============ 5. ЭКСПОРТ ФУНКЦИЙ ==========
+// ============ 5. ЭКСПОРТ ==========
 
 module.exports = {
-  getMetric,
-  getCatalog,
-  validateMetric,
   getMetricValue,
   METRICS_CATALOG: catalogs.METRICS_CATALOG
 };
