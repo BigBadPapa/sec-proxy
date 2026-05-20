@@ -1,4 +1,4 @@
-// ============ COMMON.JS - ОБЩИЕ УТИЛИТЫ ===========
+// ============ COMMON.JS - ОБЩИЕ УТИЛИТЫ ==========
 
 const fetch = require('node-fetch');
 const cache = require('./cache');
@@ -279,7 +279,112 @@ async function getSubmissionsData(cik) {
   return data;
 }
 
-// ============ 7. ЭКСПОРТ ==========
+// ============ 7. ФУНКЦИИ ДЛЯ ОТЧЕТОВ ==========
+
+/**
+ * Получает последний отчет указанного типа
+ * @param {string} cik - CIK компании
+ * @param {string} type - 'all', 'annual', 'quarterly'
+ * @returns {Object|null} - Объект с данными отчета или null
+ */
+async function getLastReport(cik, type = 'all') {
+  const subData = await getSubmissionsData(cik);
+  if (!subData || !subData.filings || !subData.filings.recent) {
+    log(`getLastReport: нет данных для CIK ${cik}`);
+    return null;
+  }
+  
+  const recent = subData.filings.recent;
+  const forms = recent.form;
+  const accessionNumbers = recent.accessionNumber;
+  const filingDates = recent.filingDate;
+  const reportDates = recent.reportDate;
+  const primaryDocuments = recent.primaryDocument;
+  const fy = recent.fy;
+  const fp = recent.fp;
+  
+  // Определяем допустимые формы в зависимости от типа
+  let allowedForms = [];
+  if (type === 'annual') {
+    allowedForms = ['10-K', '20-F', '40-F'];
+  } else if (type === 'quarterly') {
+    allowedForms = ['10-Q', '6-K'];
+  } else {
+    allowedForms = ['10-K', '10-Q', '20-F', '40-F', '6-K'];
+  }
+  
+  // Перебираем отчеты от самого свежего (индекс 0)
+  for (let i = 0; i < forms.length; i++) {
+    const form = forms[i];
+    if (!allowedForms.includes(form)) continue;
+    
+    // Для 6-K нужна дополнительная проверка: должен быть reportDate (финансовый отчет)
+    if (form === '6-K') {
+      const reportDate = reportDates[i];
+      if (!reportDate || reportDate === '') continue;
+    }
+    
+    // Отбираем только отчеты с financial quarter (fp начинается на Q)
+    const fpValue = fp[i];
+    if (!fpValue || !fpValue.startsWith('Q')) continue;
+    
+    // Все проверки пройдены
+    const accessionNumberRaw = accessionNumbers[i];
+    const accessionNumber = accessionNumberRaw.replace(/-/g, '');
+    const primaryDocument = primaryDocuments[i];
+    const fyValue = fy[i];
+    const fpValueFormatted = fpValue;
+    
+    return {
+      form: form,
+      fy: fyValue,
+      fp: fpValueFormatted,
+      accessionNumber: accessionNumber,
+      accessionNumberRaw: accessionNumberRaw,
+      primaryDocument: primaryDocument,
+      filingDate: filingDates[i],
+      reportDate: reportDates[i]
+    };
+  }
+  
+  log(`getLastReport: отчет не найден для CIK ${cik}, type=${type}`);
+  return null;
+}
+
+/**
+ * Получает валюту отчетности компании
+ * @param {string} cik - CIK компании
+ * @returns {string} - Код валюты (USD, EUR, и т.д.) или 'N/A'
+ */
+async function getCompanyCurrency(cik) {
+  const factsData = await getCompanyFacts(cik);
+  if (!factsData || !factsData.facts) {
+    log(`getCompanyCurrency: нет данных для CIK ${cik}`);
+    return 'N/A';
+  }
+  
+  // Ищем любой тег с units
+  const taxonomies = ['us-gaap', 'ifrs-full', 'srt'];
+  for (const taxonomy of taxonomies) {
+    const taxData = factsData.facts[taxonomy];
+    if (!taxData) continue;
+    
+    // Берем первый попавшийся тег
+    const firstTag = Object.keys(taxData)[0];
+    if (firstTag && taxData[firstTag].units) {
+      const units = Object.keys(taxData[firstTag].units);
+      if (units.length > 0) {
+        log(`getCompanyCurrency: найдена валюта ${units[0]} для CIK ${cik}`);
+        return units[0];
+      }
+    }
+  }
+  
+  log(`getCompanyCurrency: валюта не найдена для CIK ${cik}`);
+  return 'N/A';
+}
+
+// ============ 8. ЭКСПОРТ ==========
 
 module.exports = {
   USER_AGENT,
@@ -301,5 +406,7 @@ module.exports = {
   fetchWithRetry,
   getCIK,
   getCompanyFacts,
-  getSubmissionsData
+  getSubmissionsData,
+  getLastReport,
+  getCompanyCurrency
 };
