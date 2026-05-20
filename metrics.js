@@ -1,4 +1,4 @@
-// ============ METRICS.JS - ЯДРО РАСЧЕТА ФИНАНСОВЫХ МЕТРИК ==========
+// ============ METRICS.JS - ЯДРО РАСЧЕТА ФИНАНСОВЫХ МЕТРИК ===========
 
 const common = require('./common');
 const catalogs = require('./catalogs');
