@@ -4,40 +4,40 @@ const express = require('express');
 const router = express.Router();
 
 const handler = require('./handler');
-const direct = require('./direct');
-const common = require('./common');
+const api = require('./api');
+const cache = require('./cache');
 
 // ============ ЭНДПОИНТЫ ДЛЯ GAS ============
 router.post('/api/edgar', handler.processEdgar);
 router.post('/api/info', handler.processInfo);
 
 // ============ ПРЯМЫЕ ЗАПРОСЫ (METRICS) ============
-router.get('/metrics/:ticker', direct.getMetric);
-router.get('/catalog', direct.getCatalog);
-router.get('/validate/:metric', direct.validateMetric);
+router.get('/metrics/:ticker', api.getMetric);
+router.get('/catalog', api.getCatalog);
+router.get('/validate/:metric', api.validateMetric);
 
 // ============ ПРЯМЫЕ ЗАПРОСЫ (INFO) ============
-router.get('/info/:ticker', direct.getInfo);
-router.get('/company-meta/:ticker', direct.getCompanyMeta);
-router.get('/submissions/:identifier', direct.getSubmissions);
-router.get('/companyfacts/:identifier', direct.getCompanyFacts);
-router.get('/companyconcept/:identifier/:taxonomy/:tag', direct.getCompanyConcept);
-router.get('/frames/:taxonomy/:tag/:unit/:period', direct.getFrames);
-router.get('/company-tickers', direct.getCompanyTickers);
-router.get('/company-tickers-mf', direct.getCompanyTickersMF);
-router.get('/company-tickers-exchange', direct.getCompanyTickersExchange);
+router.get('/info/:ticker', api.getInfo);
+router.get('/company-meta/:ticker', api.getCompanyMeta);
+router.get('/submissions/:identifier', api.getSubmissions);
+router.get('/companyfacts/:identifier', api.getCompanyFacts);
+router.get('/companyconcept/:identifier/:taxonomy/:tag', api.getCompanyConcept);
+router.get('/frames/:taxonomy/:tag/:unit/:period', api.getFrames);
+router.get('/company-tickers', api.getCompanyTickers);
+router.get('/company-tickers-mf', api.getCompanyTickersMF);
+router.get('/company-tickers-exchange', api.getCompanyTickersExchange);
 
 // ============ ВСПОМОГАТЕЛЬНЫЕ ============
 router.get('/version', (req, res) => {
   res.json({ version: '1.0.0', name: 'SEC Proxy' });
 });
-router.get('/cache-status', common.getCacheStatus);
-router.post('/clear-cache', common.clearCache);
+router.get('/cache-status', cache.getCacheStatus);
+router.post('/clear-cache', cache.clearCache);
 router.get('/ping', (req, res) => {
   res.json({ status: 'alive', timestamp: new Date().toISOString() });
 });
 
-// ============ ЗАГЛУШКИ ДЛЯ БУДУЩИХ ЭНДПОИНТОВ (ACTIONS, DOCUMENT, SEARCH, ETC.) ==========
+// ============ ЗАГЛУШКИ ДЛЯ БУДУЩИХ ЭНДПОИНТОВ ==========
 router.get('/actions/reports/:ticker', (req, res) => {
   res.status(501).json({ error: 'Not implemented yet', endpoint: req.path });
 });
