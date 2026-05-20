@@ -291,13 +291,14 @@ async function getLastReport(cik, type = 'all') {
   const recent = subData.filings.recent;
   const forms = recent.form || [];
   const accessionNumbers = recent.accessionNumber || [];
-  const filingDates = recent.filingDate || [];
   const reportDates = recent.reportDate || [];
   const primaryDocuments = recent.primaryDocument || [];
   const fy = recent.fy || [];
   const fp = recent.fp || [];
   
-  // Определяем допустимые формы в зависимости от типа
+  log(`getLastReport: CIK=${cik}, type=${type}, всего отчетов=${forms.length}`);
+  
+  // Определяем допустимые формы
   let allowedForms = [];
   if (type === 'annual') {
     allowedForms = ['10-K', '20-F', '40-F'];
@@ -307,29 +308,41 @@ async function getLastReport(cik, type = 'all') {
     allowedForms = ['10-K', '10-Q', '20-F', '40-F', '6-K'];
   }
   
-  // Перебираем отчеты от самого свежего (индекс 0)
-  for (let i = 0; i < forms.length; i++) {
+  log(`getLastReport: ищем формы ${allowedForms.join(', ')}`);
+  
+  for (let i = 0; i < Math.min(forms.length, 50); i++) { // ограничим первыми 50
     const form = forms[i];
+    log(`getLastReport: индекс ${i}, форма=${form}`);
+    
     if (!allowedForms.includes(form)) continue;
     
-    // Проверяем, что все необходимые поля существуют
     const fpValue = fp[i];
     const fyValue = fy[i];
     const accessionNumberRaw = accessionNumbers[i];
     const primaryDocument = primaryDocuments[i];
+    const reportDate = reportDates[i];
     
-    if (!fpValue || !fyValue || !accessionNumberRaw || !primaryDocument) continue;
+    log(`getLastReport: fp=${fpValue}, fy=${fyValue}, accession=${accessionNumberRaw}, doc=${primaryDocument}, reportDate=${reportDate}`);
     
-    // Для 6-K нужна дополнительная проверка: должен быть reportDate (финансовый отчет)
-    if (form === '6-K') {
-      const reportDate = reportDates[i];
-      if (!reportDate || reportDate === '') continue;
+    if (!fpValue || !fyValue || !accessionNumberRaw || !primaryDocument) {
+      log(`getLastReport: пропущен из-за отсутствующих данных`);
+      continue;
     }
     
-    // Отбираем только отчеты с financial quarter (fp начинается на Q)
-    if (!fpValue.startsWith('Q')) continue;
+    if (form === '6-K') {
+      if (!reportDate || reportDate === '') {
+        log(`getLastReport: пропущен 6-K из-за отсутствия reportDate`);
+        continue;
+      }
+    }
     
-    // Все проверки пройдены
+    if (!fpValue.startsWith('Q')) {
+      log(`getLastReport: пропущен, fp=${fpValue} не начинается с Q`);
+      continue;
+    }
+    
+    log(`getLastReport: НАЙДЕН отчет! form=${form}, fy=${fyValue}, fp=${fpValue}`);
+    
     const accessionNumber = accessionNumberRaw.replace(/-/g, '');
     
     return {
@@ -340,7 +353,7 @@ async function getLastReport(cik, type = 'all') {
       accessionNumberRaw: accessionNumberRaw,
       primaryDocument: primaryDocument,
       filingDate: filingDates[i] || null,
-      reportDate: reportDates[i] || null
+      reportDate: reportDate || null
     };
   }
   
