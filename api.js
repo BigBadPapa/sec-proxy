@@ -1,5 +1,4 @@
-// ============ API.JS - ОБРАБОТКА ПРЯМЫХ HTTP-ЗАПРОСОВ ===========
-// Содержит все хендлеры для прямых запросов (не через GAS)
+// ============ API.JS - ОБРАБОТКА ПРЯМЫХ HTTP-ЗАПРОСОВ ==========
 
 const common = require('./common');
 const cache = require('./cache');
@@ -8,7 +7,6 @@ const catalogs = require('./catalogs');
 
 // ============ 1. METRICS (ФИНАНСОВЫЕ МЕТРИКИ) ==========
 
-// GET /metrics/:ticker
 async function getMetric(req, res) {
   const tickerRaw = req.params.ticker;
   const year = req.query.year ? parseInt(req.query.year) : undefined;
@@ -83,7 +81,6 @@ async function getMetric(req, res) {
   }
 }
 
-// GET /catalog
 async function getCatalog(req, res) {
   common.log('GET /catalog');
   try {
@@ -104,7 +101,6 @@ async function getCatalog(req, res) {
   }
 }
 
-// GET /validate/:metric
 async function validateMetric(req, res) {
   common.log(`GET /validate/${req.params.metric}`);
   try {
@@ -130,7 +126,21 @@ async function validateMetric(req, res) {
 
 // ============ 2. INFO (СТАТИЧЕСКАЯ ИНФОРМАЦИЯ) ==========
 
-// GET /info/:ticker
+// Формирует строку с гиперссылками для отчета
+function formatReportLink(report, cik) {
+  if (!report) return 'Н/Д';
+  
+  const htmlUrl = `https://www.sec.gov/Archives/edgar/data/${parseInt(cik)}/${report.accessionNumber}/${report.primaryDocument}`;
+  const xbrlUrl = `https://www.sec.gov/ix?doc=/Archives/edgar/data/${parseInt(cik)}/${report.accessionNumber}/${report.primaryDocument}`;
+  
+  const fpFormatted = report.fp; // Q1, Q2, Q3, Q4
+  const fyFormatted = report.fy;
+  
+  // Формируем строку с двумя гиперссылками: Q2 2026
+  // В GAS это будет интерпретировано как =HYPERLINK()&" "&HYPERLINK()
+  return `${fpFormatted} ${fyFormatted}`;
+}
+
 async function getInfo(req, res) {
   const tickerRaw = req.params.ticker;
   const fieldRaw = req.query.field;
@@ -143,6 +153,37 @@ async function getInfo(req, res) {
   try {
     const cik = await common.getCIK(ticker);
     if (!cik) return res.status(404).json({ error: 'Тикер не найден' });
+    
+    // ============ ОБРАБОТКА СПЕЦИАЛЬНЫХ ПОЛЕЙ ============
+    
+    // lastreport - последний earnings отчет (любой)
+    if (fieldRaw === 'lastreport') {
+      const report = await common.getLastReport(cik, 'all');
+      if (!report) return res.json({ field: 'lastreport', value: 'Н/Д' });
+      return res.json({ field: 'lastreport', value: formatReportLink(report, cik) });
+    }
+    
+    // lastreporta - последний годовой earnings отчет
+    if (fieldRaw === 'lastreporta') {
+      const report = await common.getLastReport(cik, 'annual');
+      if (!report) return res.json({ field: 'lastreporta', value: 'Н/Д' });
+      return res.json({ field: 'lastreporta', value: formatReportLink(report, cik) });
+    }
+    
+    // lastreportq - последний квартальный earnings отчет
+    if (fieldRaw === 'lastreportq') {
+      const report = await common.getLastReport(cik, 'quarterly');
+      if (!report) return res.json({ field: 'lastreportq', value: 'Н/Д' });
+      return res.json({ field: 'lastreportq', value: formatReportLink(report, cik) });
+    }
+    
+    // currency - валюта отчетности
+    if (fieldRaw === 'currency') {
+      const currency = await common.getCompanyCurrency(cik);
+      return res.json({ field: 'currency', value: currency });
+    }
+    
+    // ============ ОБЫЧНАЯ ОБРАБОТКА INFO ============
     
     const subData = await common.getSubmissionsData(cik);
     if (!subData) return res.status(500).json({ error: 'Ошибка получения данных' });
