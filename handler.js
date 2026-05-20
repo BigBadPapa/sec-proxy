@@ -3,22 +3,10 @@
 const common = require('./common');
 const metrics = require('./metrics');
 
-function parseTicker(raw) {
-  return common.normalizeTicker(raw);
-}
-
 function parseYear(raw) {
   if (raw === undefined || raw === null) return undefined;
   const year = Number(raw);
   return isNaN(year) ? undefined : year;
-}
-
-function parseQuarter(raw) {
-  return common.normalizeQuarter(raw);
-}
-
-function parseScale(raw) {
-  return common.normalizeScale(raw);
 }
 
 function parseStringArray(raw, defaultSeparator = '/') {
@@ -61,7 +49,7 @@ async function processEdgar(req, res) {
   try {
     const { ticker: rawTicker, metric: rawMetric, year: rawYear, quarter: rawQuarter, scale: rawScale, compare: rawCompare } = req.body;
     
-    const ticker = parseTicker(rawTicker);
+    const ticker = common.normalizeTicker(rawTicker);
     if (!ticker) {
       return res.json(formatResponse(false, null, false, 'Тикер не указан'));
     }
@@ -72,8 +60,8 @@ async function processEdgar(req, res) {
     }
     
     const year = parseYear(rawYear);
-    const quarter = parseQuarter(rawQuarter);
-    const scale = parseScale(rawScale);
+    const quarter = common.normalizeQuarter(rawQuarter);
+    const scale = common.normalizeScale(rawScale);
     const compare = rawCompare ? String(rawCompare).toLowerCase().trim() : undefined;
     
     const resolvedMetrics = [];
@@ -124,7 +112,7 @@ async function processInfo(req, res) {
   try {
     const { ticker: rawTicker, field: rawField } = req.body;
     
-    const ticker = parseTicker(rawTicker);
+    const ticker = common.normalizeTicker(rawTicker);
     if (!ticker) {
       return res.json(formatResponse(false, null, false, 'Тикер не указан'));
     }
