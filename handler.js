@@ -128,6 +128,14 @@ async function processInfo(req, res) {
   try {
     const { ticker: rawTicker, field: rawField } = req.body;
     
+    // ВРЕМЕННОЕ ЛОГИРОВАНИЕ ДЛЯ ОТЛАДКИ
+    console.log('=== processInfo DEBUG ===');
+    console.log('rawTicker:', rawTicker);
+    console.log('rawField:', rawField);
+    console.log('typeof rawField:', typeof rawField);
+    console.log('rawField === "lastreport":', rawField === 'lastreport');
+    console.log('========================');
+    
     const ticker = common.normalizeTicker(rawTicker);
     if (!ticker) {
       return res.json(formatResponse(false, null, false, 'Тикер не указан'));
@@ -137,12 +145,15 @@ async function processInfo(req, res) {
     
     // lastreport - последний earnings отчет (любой)
     if (rawField === 'lastreport') {
+      console.log('Попали в блок lastreport');
+      
       // ВРЕМЕННЫЙ ТЕСТ ДЛЯ AAPL
       if (ticker === 'AAPL') {
+        console.log('Вошли в тестовый блок AAPL');
         const testValue = '=HYPERLINK("https://www.sec.gov/Archives/edgar/data/320193/000032019325000079/aapl-20250927.htm"; "Q4")&" "&HYPERLINK("https://www.sec.gov/ix?doc=/Archives/edgar/data/320193/000032019325000079/aapl-20250927.htm"; "2025")';
         return res.json(formatResponse(true, testValue, false));
       }
-      //коец теста.
+      
       const cik = await common.getCIK(ticker);
       if (!cik) {
         return res.json(formatResponse(false, null, false, 'Тикер не найден'));
@@ -157,6 +168,7 @@ async function processInfo(req, res) {
     
     // lastreporta - последний годовой earnings отчет
     if (rawField === 'lastreporta') {
+      console.log('Попали в блок lastreporta');
       const cik = await common.getCIK(ticker);
       if (!cik) {
         return res.json(formatResponse(false, null, false, 'Тикер не найден'));
@@ -171,6 +183,7 @@ async function processInfo(req, res) {
     
     // lastreportq - последний квартальный earnings отчет
     if (rawField === 'lastreportq') {
+      console.log('Попали в блок lastreportq');
       const cik = await common.getCIK(ticker);
       if (!cik) {
         return res.json(formatResponse(false, null, false, 'Тикер не найден'));
@@ -185,6 +198,7 @@ async function processInfo(req, res) {
     
     // currency - валюта отчетности
     if (rawField === 'currency') {
+      console.log('Попали в блок currency');
       const cik = await common.getCIK(ticker);
       if (!cik) {
         return res.json(formatResponse(false, null, false, 'Тикер не найден'));
@@ -193,7 +207,9 @@ async function processInfo(req, res) {
       return res.json(formatResponse(true, currency, false));
     }
     
-    // ============ ОБЫЧНАЯ ОБРАБОТКА INFO ============
+    console.log('Не попали ни в один специальный блок, идем в обычную обработку');
+    
+    // ============ ОСТАЛЬНАЯ ОБРАБОТКА INFO ============
     
     const { items: fieldsArray, isBatch } = parseStringArray(rawField);
     if (fieldsArray.length === 0) {
