@@ -281,50 +281,65 @@ async function getSubmissionsData(cik) {
 
 // ============ 7. НОВЫЕ ФУНКЦИИ ДЛЯ ПОИСКА ОТЧЕТОВ ==========
 
-/**
- * Формирует URL документа отчета
- * @param {string} cik - CIK компании (10 цифр)
- * @param {string} accessionNumberRaw - Accession номер с дефисами (например, "0000018230-26-000021")
- * @param {string} primaryDocument - Имя файла (например, "cat-20260331.htm")
- * @param {string} format - Формат: 'html' или 'xbrl'
- * @returns {string} Полный URL к документу
- */
 function buildDocumentUrl(cik, accessionNumberRaw, primaryDocument, format) {
   const cikNumber = parseInt(cik, 10);
   const accessionNumber = accessionNumberRaw.replace(/-/g, '');
   
+  log(`[buildDocumentUrl] cik=${cik}, cikNumber=${cikNumber}, accessionNumberRaw=${accessionNumberRaw}, accessionNumber=${accessionNumber}, primaryDocument=${primaryDocument}, format=${format}`);
+  
   if (format === 'html') {
-    return `${SEC_BASE}/Archives/edgar/data/${cikNumber}/${accessionNumber}/${primaryDocument}`;
+    const url = `${SEC_BASE}/Archives/edgar/data/${cikNumber}/${accessionNumber}/${primaryDocument}`;
+    log(`[buildDocumentUrl] html URL: ${url}`);
+    return url;
   } else if (format === 'xbrl') {
-    return `${SEC_BASE}/ix?doc=/Archives/edgar/data/${cikNumber}/${accessionNumber}/${primaryDocument}`;
+    const url = `${SEC_BASE}/ix?doc=/Archives/edgar/data/${cikNumber}/${accessionNumber}/${primaryDocument}`;
+    log(`[buildDocumentUrl] xbrl URL: ${url}`);
+    return url;
   }
+  
+  log(`[buildDocumentUrl] Неизвестный format: ${format}`);
   return null;
 }
-
 function formatReportString(report, format) {
-  if (!report) return 'Н/Д';
+  log(`[formatReportString] Начало: report=${report ? 'есть' : 'null'}, format=${format}`);
+  
+  if (!report) {
+    log(`[formatReportString] report = null, возвращаем 'Н/Д'`);
+    return 'Н/Д';
+  }
+  
+  log(`[formatReportString] report.fy=${report.fy}, report.fp=${report.fp}, report.form=${report.form}`);
   
   if (format === 'text') {
     const year = report.fy;
     const fp = report.fp;
     
-    // Годовой отчет: FY 2025
+    // Годовой отчет
     if (fp === 'FY' || report.form === '10-K' || report.form === '20-F' || report.form === '40-F') {
-      return `FY ${year}`;
+      const result = `FY ${year}`;
+      log(`[formatReportString] text (годовой): ${result}`);
+      return result;
     }
-    // Квартальный отчет: Q2 2026
+    // Квартальный отчет
     const quarterNum = fp.replace('Q', '');
-    return `Q${quarterNum} ${year}`;
+    const result = `Q${quarterNum} ${year}`;
+    log(`[formatReportString] text (квартальный): ${result}`);
+    return result;
   }
   
   if (format === 'html') {
-    return buildDocumentUrl(report.cik, report.accessionNumberRaw, report.primaryDocument, 'html');
+    const url = buildDocumentUrl(report.cik, report.accessionNumberRaw, report.primaryDocument, 'html');
+    log(`[formatReportString] html URL: ${url}`);
+    return url;
   }
   
   if (format === 'xbrl') {
-    return buildDocumentUrl(report.cik, report.accessionNumberRaw, report.primaryDocument, 'xbrl');
+    const url = buildDocumentUrl(report.cik, report.accessionNumberRaw, report.primaryDocument, 'xbrl');
+    log(`[formatReportString] xbrl URL: ${url}`);
+    return url;
   }
   
+  log(`[formatReportString] Неизвестный format: ${format}, возвращаем 'Н/Д'`);
   return 'Н/Д';
 }
 
