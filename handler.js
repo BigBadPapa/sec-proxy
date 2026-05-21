@@ -46,20 +46,6 @@ function formatResponse(success, data, isBatch = false, error = null) {
   }
 }
 
-function formatReportLinkForGas(report, cik) {
-  if (!report) return 'Н/Д';
-  
-  const htmlUrl = `https://www.sec.gov/Archives/edgar/data/${parseInt(cik)}/${report.accessionNumber}/${report.primaryDocument}`;
-  const xbrlUrl = `https://www.sec.gov/ix?doc=/Archives/edgar/data/${parseInt(cik)}/${report.accessionNumber}/${report.primaryDocument}`;
-  
-  return {
-    fp: report.fp,
-    fy: report.fy,
-    htmlUrl: htmlUrl,
-    xbrlUrl: xbrlUrl
-  };
-}
-
 async function processEdgar(req, res) {
   try {
     const { ticker: rawTicker, metric: rawMetric, year: rawYear, quarter: rawQuarter, scale: rawScale, compare: rawCompare } = req.body;
@@ -132,61 +118,48 @@ async function processInfo(req, res) {
       return res.json(formatResponse(false, null, false, 'Тикер не указан'));
     }
     
-    let normalizedField = rawField;
-    if (Array.isArray(normalizedField)) {
-      normalizedField = normalizedField[0];
+    // Определяем, что за поле запрошено (если строка)
+    let fieldStr = null;
+    let isSpecialField = false;
+    let specialFieldType = null;
+    let specialFieldFormat = null;
+    
+    if (typeof rawField === 'string') {
+      fieldStr = rawField.trim().toLowerCase();
+      
+      // Проверка на специальные поля для отчетов
+      const specialFields = {
+        'lastreport': { type: 'all', format: 'text' },
+        'lastreporthtml': { type: 'all', format: 'html' },
+        'lastreportxbrl': { type: 'all', format: 'xbrl' },
+        'alastreport': { type: 'annual', format: 'text' },
+        'alastreporthtml': { type: 'annual', format: 'html' },
+        'alastreportxbrl': { type: 'annual', format: 'xbrl' },
+        'qlastreport': { type: 'quarterly', format: 'text' },
+        'qlastreporthtml': { type: 'quarterly', format: 'html' },
+        'qlastreportxbrl': { type: 'quarterly', format: 'xbrl' }
+      };
+      
+      if (specialFields[fieldStr]) {
+        isSpecialField = true;
+        specialFieldType = specialFields[fieldStr].type;
+        specialFieldFormat = specialFields[fieldStr].format;
+      }
     }
     
-    const fieldStr = normalizedField ? normalizedField.toString().trim().toLowerCase() : '';
-    
-    if (fieldStr === 'lastreport') {
+    // Обработка специальных полей (lastreport и т.д.)
+    if (isSpecialField) {
       const cik = await common.getCIK(ticker);
       if (!cik) {
         return res.json(formatResponse(false, null, false, 'Тикер не найден'));
       }
-      const report = await common.getLastReport(cik, 'all');
-      if (!report) {
-        return res.json(formatResponse(true, 'Н/Д', false));
-      }
-      const linkData = formatReportLinkForGas(report, cik);
-      return res.json(formatResponse(true, linkData, false));
+      
+      const report = await common.getLastReport(cik, specialFieldType);
+      const result = common.formatReportString(report, specialFieldFormat);
+      return res.json(formatResponse(true, result, false));
     }
     
-    if (fieldStr === 'lastreporta') {
-      const cik = await common.getCIK(ticker);
-      if (!cik) {
-        return res.json(formatResponse(false, null, false, 'Тикер не найден'));
-      }
-      const report = await common.getLastReport(cik, 'annual');
-      if (!report) {
-        return res.json(formatResponse(true, 'Н/Д', false));
-      }
-      const linkData = formatReportLinkForGas(report, cik);
-      return res.json(formatResponse(true, linkData, false));
-    }
-    
-    if (fieldStr === 'lastreportq') {
-      const cik = await common.getCIK(ticker);
-      if (!cik) {
-        return res.json(formatResponse(false, null, false, 'Тикер не найден'));
-      }
-      const report = await common.getLastReport(cik, 'quarterly');
-      if (!report) {
-        return res.json(formatResponse(true, 'Н/Д', false));
-      }
-      const linkData = formatReportLinkForGas(report, cik);
-      return res.json(formatResponse(true, linkData, false));
-    }
-    
-    if (fieldStr === 'currency') {
-      const cik = await common.getCIK(ticker);
-      if (!cik) {
-        return res.json(formatResponse(false, null, false, 'Тикер не найден'));
-      }
-      const currency = await common.getCompanyCurrency(cik);
-      return res.json(formatResponse(true, currency, false));
-    }
-    
+    // Обычные поля (массив или строка)
     let fieldsArray = [];
     let isBatch = false;
     
