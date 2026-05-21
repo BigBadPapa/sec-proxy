@@ -287,7 +287,7 @@ async function getLastReport(cik, type = 'all') {
     log(`getLastReport: нет данных для CIK ${cik}`);
     return null;
   }
-  
+
   const recent = subData.filings.recent;
   const forms = recent.form || [];
   const accessionNumbers = recent.accessionNumber || [];
@@ -295,9 +295,7 @@ async function getLastReport(cik, type = 'all') {
   const primaryDocuments = recent.primaryDocument || [];
   const fy = recent.fy || [];
   const fp = recent.fp || [];
-  
-  log(`getLastReport: CIK=${cik}, type=${type}, всего отчетов=${forms.length}`);
-  
+
   // Определяем допустимые формы
   let allowedForms = [];
   if (type === 'annual') {
@@ -307,44 +305,46 @@ async function getLastReport(cik, type = 'all') {
   } else {
     allowedForms = ['10-K', '10-Q', '20-F', '40-F', '6-K'];
   }
-  
-  log(`getLastReport: ищем формы ${allowedForms.join(', ')}`);
-  
-  for (let i = 0; i < Math.min(forms.length, 50); i++) { // ограничим первыми 50
+
+  log(`getLastReport: Поиск для CIK ${cik}, тип ${type}. Всего форм: ${forms.length}`);
+
+  // Идем по原始ным индексам, от самых свежих (0) до более старых
+  for (let i = 0; i < forms.length; i++) {
     const form = forms[i];
-    log(`getLastReport: индекс ${i}, форма=${form}`);
-    
-    if (!allowedForms.includes(form)) continue;
-    
-    const fpValue = fp[i];
-    const fyValue = fy[i];
-    const accessionNumberRaw = accessionNumbers[i];
-    const primaryDocument = primaryDocuments[i];
-    const reportDate = reportDates[i];
-    
-    log(`getLastReport: fp=${fpValue}, fy=${fyValue}, accession=${accessionNumberRaw}, doc=${primaryDocument}, reportDate=${reportDate}`);
-    
-    if (!fpValue || !fyValue || !accessionNumberRaw || !primaryDocument) {
-      log(`getLastReport: пропущен из-за отсутствующих данных`);
+    if (!allowedForms.includes(form)) {
       continue;
     }
-    
+
+    // Для 6-K обязательно наличие reportDate
     if (form === '6-K') {
+      const reportDate = reportDates[i];
       if (!reportDate || reportDate === '') {
-        log(`getLastReport: пропущен 6-K из-за отсутствия reportDate`);
+        log(`getLastReport: Пропускаем 6-K индекс ${i} без reportDate`);
         continue;
       }
     }
-    
-    if (!fpValue.startsWith('Q')) {
-      log(`getLastReport: пропущен, fp=${fpValue} не начинается с Q`);
+
+    const accessionNumberRaw = accessionNumbers[i];
+    const primaryDocument = primaryDocuments[i];
+    const fyValue = fy[i];
+    const fpValue = fp[i];
+    const reportDate = reportDates[i];
+
+    // ВАЖНО: Проверяем, что все необходимые поля для отчета есть
+    if (!accessionNumberRaw || !primaryDocument || fyValue === undefined || fpValue === undefined) {
+      log(`getLastReport: Пропускаем индекс ${i} (${form}) из-за отсутствующих данных. fy=${fyValue}, fp=${fpValue}, acc=${!!accessionNumberRaw}, doc=${!!primaryDocument}`);
       continue;
     }
-    
-    log(`getLastReport: НАЙДЕН отчет! form=${form}, fy=${fyValue}, fp=${fpValue}`);
-    
+
+    // Убеждаемся, что fp начинается с 'Q' для квартальных или что это годовой отчет (FY)
+    if (!fpValue.startsWith('Q') && type !== 'annual') {
+        log(`getLastReport: Пропускаем индекс ${i} (${form}) - fp не начинается с Q: ${fpValue}`);
+        continue;
+    }
+
+    log(`getLastReport: НАЙДЕН отчет! Индекс ${i}, Форма ${form}, FY=${fyValue}, FP=${fpValue}, Accession=${accessionNumberRaw}`);
+
     const accessionNumber = accessionNumberRaw.replace(/-/g, '');
-    
     return {
       form: form,
       fy: fyValue,
@@ -352,12 +352,12 @@ async function getLastReport(cik, type = 'all') {
       accessionNumber: accessionNumber,
       accessionNumberRaw: accessionNumberRaw,
       primaryDocument: primaryDocument,
-      filingDate: filingDates[i] || null,
+      filingDate: recent.filingDate[i] || null,
       reportDate: reportDate || null
     };
   }
-  
-  log(`getLastReport: отчет не найден для CIK ${cik}, type=${type}`);
+
+  log(`getLastReport: Отчет не найден для CIK ${cik}, type=${type}`);
   return null;
 }
 
