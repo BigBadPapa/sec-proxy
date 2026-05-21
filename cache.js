@@ -5,7 +5,7 @@ const CACHE_CONFIG = {
   tickers: { enabled: true, ttl: 24 * 60 * 60 * 1000, maxSize: 1 },
   cik: { enabled: true, ttl: 24 * 60 * 60 * 1000, maxSize: 500 },
   facts: { enabled: true, ttl: 6 * 60 * 60 * 1000, maxSize: 20 },
-  submissions: { enabled: true, ttl: 24 * 60 * 60 * 1000, maxSize: 20 },
+  submissions: { enabled: false, ttl: 24 * 60 * 60 * 1000, maxSize: 20 },
   metrics: { enabled: true, ttl: 5 * 60 * 1000, maxSize: 1000 },
   quarterParse: { enabled: true, ttl: Infinity, maxSize: 50 },
   companyMeta: { enabled: true, ttl: 24 * 60 * 60 * 1000, maxSize: 500 }
