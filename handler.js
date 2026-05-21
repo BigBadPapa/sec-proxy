@@ -58,7 +58,7 @@ function formatReportLinkForGas(report, cik) {
   
   // Формируем строку с двумя гиперссылками для Google Sheets
   // =HYPERLINK("htmlUrl"; "Q2")&" "&HYPERLINK("xbrlUrl"; "2026")
-  return `=HYPERLINK("${htmlUrl}"; "${fpFormatted}")&" "&HYPERLINK("${xbrlUrl}"; "${fyFormatted}")`;
+  return `=ГИПЕРССЫЛКА("${htmlUrl}"; "${fpFormatted}")&" "&ГИПЕРССЫЛКА("${xbrlUrl}"; "${fyFormatted}")`;
 }
 
 async function processEdgar(req, res) {
