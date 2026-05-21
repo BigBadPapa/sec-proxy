@@ -48,7 +48,16 @@ function formatResponse(success, data, isBatch = false, error = null) {
 
 function formatReportLinkForGas(report, cik) {
   if (!report) return 'Н/Д';
-  return report.fp;
+  
+  const htmlUrl = `https://www.sec.gov/Archives/edgar/data/${parseInt(cik)}/${report.accessionNumber}/${report.primaryDocument}`;
+  const xbrlUrl = `https://www.sec.gov/ix?doc=/Archives/edgar/data/${parseInt(cik)}/${report.accessionNumber}/${report.primaryDocument}`;
+  
+  return {
+    fp: report.fp,
+    fy: report.fy,
+    htmlUrl: htmlUrl,
+    xbrlUrl: xbrlUrl
+  };
 }
 
 async function processEdgar(req, res) {
