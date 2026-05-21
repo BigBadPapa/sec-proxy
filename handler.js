@@ -53,12 +53,13 @@ function formatReportLinkForGas(report, cik) {
   const htmlUrl = `https://www.sec.gov/Archives/edgar/data/${parseInt(cik)}/${report.accessionNumber}/${report.primaryDocument}`;
   const xbrlUrl = `https://www.sec.gov/ix?doc=/Archives/edgar/data/${parseInt(cik)}/${report.accessionNumber}/${report.primaryDocument}`;
   
-  const fpFormatted = report.fp;
-  const fyFormatted = report.fy;
-  
-  // Формируем строку с двумя гиперссылками для Google Sheets
-  // =HYPERLINK("htmlUrl"; "Q2")&" "&HYPERLINK("xbrlUrl"; "2026")
-  return `=ГИПЕРССЫЛКА("${htmlUrl}"; "${fpFormatted}")&" "&ГИПЕРССЫЛКА("${xbrlUrl}"; "${fyFormatted}")`;
+  // Возвращаем объект с данными для построения формулы в GAS
+  return {
+    htmlUrl: htmlUrl,
+    xbrlUrl: xbrlUrl,
+    fp: report.fp,
+    fy: report.fy
+  };
 }
 
 async function processEdgar(req, res) {
