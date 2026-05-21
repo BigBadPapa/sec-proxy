@@ -294,7 +294,6 @@ async function getLastReport(cik, type = 'all') {
     return null;
   }
 
-  // Находим тег Assets в любой таксономии
   let assetsData = null;
   const taxonomies = ['us-gaap', 'ifrs-full', 'srt'];
   for (const taxonomy of taxonomies) {
@@ -310,7 +309,6 @@ async function getLastReport(cik, type = 'all') {
     return null;
   }
 
-  // Берем первый доступный юнит (обычно USD)
   const unitKey = Object.keys(assetsData.units)[0];
   const assetsValues = assetsData.units[unitKey] || [];
 
@@ -319,14 +317,12 @@ async function getLastReport(cik, type = 'all') {
     return null;
   }
 
-  // Сортируем значения по дате filed (от новых к старым)
   const sortedAssets = assetsValues.sort((a, b) => {
     const filedA = a.filed ? new Date(a.filed).getTime() : 0;
     const filedB = b.filed ? new Date(b.filed).getTime() : 0;
     return filedB - filedA;
   });
 
-  // Определяем допустимые формы
   let allowedForms = [];
   if (type === 'annual') {
     allowedForms = ['10-K', '20-F', '40-F'];
@@ -344,7 +340,6 @@ async function getLastReport(cik, type = 'all') {
 
   log(`getLastReport: Поиск для CIK ${cik}, тип ${type}. Всего отчетов: ${forms.length}`);
 
-  // Перебираем отчеты от самых свежих
   for (let i = 0; i < forms.length; i++) {
     const form = forms[i];
     if (!allowedForms.includes(form)) continue;
@@ -355,7 +350,6 @@ async function getLastReport(cik, type = 'all') {
 
     if (!accessionNumberRaw || !primaryDocument) continue;
 
-    // Ищем в XBRL значения Assets, которые соответствуют этой дате подачи
     let matchingAsset = null;
     for (const asset of sortedAssets) {
       if (asset.filed === filingDate) {
@@ -397,13 +391,11 @@ async function getCompanyCurrency(cik) {
     return 'N/A';
   }
   
-  // Ищем любой тег с units
   const taxonomies = ['us-gaap', 'ifrs-full', 'srt'];
   for (const taxonomy of taxonomies) {
     const taxData = factsData.facts[taxonomy];
     if (!taxData) continue;
     
-    // Берем первый попавшийся тег
     const firstTag = Object.keys(taxData)[0];
     if (firstTag && taxData[firstTag].units) {
       const units = Object.keys(taxData[firstTag].units);
