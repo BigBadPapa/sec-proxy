@@ -301,12 +301,6 @@ function buildDocumentUrl(cik, accessionNumberRaw, primaryDocument, format) {
   return null;
 }
 
-/**
- * Форматирует строку с информацией об отчете для GAS
- * @param {Object} report - Объект отчета (из getLastReport)
- * @param {string} format - Формат: 'text', 'html', 'xbrl'
- * @returns {string} Отформатированная строка
- */
 function formatReportString(report, format) {
   if (!report) return 'Н/Д';
   
@@ -334,76 +328,83 @@ function formatReportString(report, format) {
   return 'Н/Д';
 }
 
-/**
- * Находит последний earnings отчет компании (с кэшированием)
- * @param {string} cik - CIK компании
- * @param {string} type - Тип отчета: 'annual', 'quarterly', 'all'
- * @returns {Object|null} Объект с данными отчета или null
- */
 async function getLastReport(cik, type = 'all') {
   const cacheKey = `lastreport:${cik}:${type}`;
+  
+  log(`[getLastReport] НАЧАЛО: CIK=${cik}, type=${type}`);
   
   // Проверка кэша
   if (cache.CACHE_CONFIG.metrics.enabled) {
     const cached = cache.getFromCache(cache.metricsCache, cacheKey, cache.CACHE_CONFIG.metrics.ttl);
     if (cached !== null) {
-      log(`getLastReport: кэш HIT для ${cacheKey}`);
+      log(`[getLastReport] КЭШ HIT: ${cacheKey} -> возвращаем из кэша`);
       return cached;
     }
-    log(`getLastReport: кэш MISS для ${cacheKey}`);
+    log(`[getLastReport] КЭШ MISS: ${cacheKey}`);
   }
   
+  log(`[getLastReport] Загружаем submissions для CIK ${cik}`);
   const subData = await getSubmissionsData(cik);
   if (!subData || !subData.filings || !subData.filings.recent) {
-    log(`getLastReport: нет данных для CIK ${cik}`);
+    log(`[getLastReport] ОШИБКА: нет submissions для CIK ${cik}`);
     return null;
   }
+  log(`[getLastReport] submissions загружены, количество отчетов: ${subData.filings.recent.form?.length || 0}`);
 
+  log(`[getLastReport] Загружаем companyfacts для CIK ${cik}`);
   const factsData = await getCompanyFacts(cik);
   if (!factsData || !factsData.facts) {
-    log(`getLastReport: нет XBRL данных для CIK ${cik}`);
+    log(`[getLastReport] ОШИБКА: нет XBRL данных для CIK ${cik}`);
     return null;
   }
+  log(`[getLastReport] companyfacts загружены`);
 
   // Поиск тега Assets в XBRL
+  log(`[getLastReport] Поиск тега Assets в XBRL...`);
   let assetsData = null;
   const taxonomies = ['us-gaap', 'ifrs-full', 'srt'];
   for (const taxonomy of taxonomies) {
     const taxData = factsData.facts[taxonomy];
     if (taxData && taxData.Assets) {
       assetsData = taxData.Assets;
+      log(`[getLastReport] Тег Assets найден в таксономии: ${taxonomy}`);
       break;
     }
   }
 
   if (!assetsData || !assetsData.units) {
-    log(`getLastReport: тег Assets не найден для CIK ${cik}`);
+    log(`[getLastReport] ОШИБКА: тег Assets не найден в XBRL для CIK ${cik}`);
     return null;
   }
 
   const unitKey = Object.keys(assetsData.units)[0];
   const assetsValues = assetsData.units[unitKey] || [];
+  log(`[getLastReport] Assets найден, единица измерения: ${unitKey}, количество значений: ${assetsValues.length}`);
 
   if (assetsValues.length === 0) {
-    log(`getLastReport: нет значений Assets для CIK ${cik}`);
+    log(`[getLastReport] ОШИБКА: нет значений Assets для CIK ${cik}`);
     return null;
   }
 
-  // Сортировка Assets по дате filed
+  // Сортировка Assets по дате filed (от новых к старым)
   const sortedAssets = assetsValues.sort((a, b) => {
     const filedA = a.filed ? new Date(a.filed).getTime() : 0;
     const filedB = b.filed ? new Date(b.filed).getTime() : 0;
     return filedB - filedA;
   });
+  log(`[getLastReport] Assets отсортированы. Первые 3 даты filed: ${sortedAssets.slice(0, 3).map(a => a.filed).join(', ')}`);
 
-  // Определение допустимых форм в зависимости от типа
+  // Определение допустимых форм
   let allowedForms = [];
   if (type === 'annual') {
     allowedForms = ['10-K', '20-F', '40-F'];
+    log(`[getLastReport] Тип: annual, допустимые формы: ${allowedForms.join(', ')}`);
   } else if (type === 'quarterly') {
     allowedForms = ['10-Q', '6-K'];
+    log(`[getLastReport] Тип: quarterly, допустимые формы: ${allowedForms.join(', ')}`);
   } else {
     allowedForms = ['10-K', '10-Q', '20-F', '40-F', '6-K'];
+    log(`[getLastReport] Тип: all, допустимые формы: ${allowedForms.join(', ')}`);
   }
 
   const recent = subData.filings.recent;
@@ -412,24 +413,32 @@ async function getLastReport(cik, type = 'all') {
   const filingDates = recent.filingDate || [];
   const primaryDocuments = recent.primaryDocument || [];
 
-  log(`getLastReport: Поиск для CIK ${cik}, тип ${type}. Всего отчетов: ${forms.length}`);
+  log(`[getLastReport] Всего отчетов в submissions: ${forms.length}`);
+  log(`[getLastReport] Первые 5 форм: ${forms.slice(0, 5).join(', ')}`);
+  log(`[getLastReport] Первые 5 дат filing: ${filingDates.slice(0, 5).join(', ')}`);
 
-  // Поиск отчета (от новых к старым)
+  // Поиск отчета
   for (let i = 0; i < forms.length; i++) {
     const form = forms[i];
     if (!allowedForms.includes(form)) continue;
-
+    
+    log(`[getLastReport] Проверяем отчет ${i}: form=${form}, filingDate=${filingDates[i]}`);
+    
     const accessionNumberRaw = accessionNumbers[i];
     const primaryDocument = primaryDocuments[i];
     const filingDate = filingDates[i];
 
-    if (!accessionNumberRaw || !primaryDocument) continue;
+    if (!accessionNumberRaw || !primaryDocument) {
+      log(`[getLastReport] Пропускаем: нет accessionNumber или primaryDocument`);
+      continue;
+    }
 
     // Поиск соответствующего Assets по дате filed
     let matchingAsset = null;
     for (const asset of sortedAssets) {
       if (asset.filed === filingDate) {
         matchingAsset = asset;
+        log(`[getLastReport] Найдено совпадение по filed: asset.filed=${asset.filed}, filingDate=${filingDate}`);
         break;
       }
     }
@@ -438,8 +447,10 @@ async function getLastReport(cik, type = 'all') {
       const fyValue = matchingAsset.fy;
       const fpValue = matchingAsset.fp;
       
+      log(`[getLastReport] matchingAsset: fy=${fyValue}, fp=${fpValue}, form=${form}`);
+      
       if (fyValue && fpValue) {
-        log(`getLastReport: НАЙДЕН отчет! Индекс ${i}, Форма ${form}, FY=${fyValue}, FP=${fpValue}, filingDate=${filingDate}`);
+        log(`[getLastReport] УСПЕХ! Найден отчет! Индекс ${i}, Форма ${form}, FY=${fyValue}, FP=${fpValue}, filingDate=${filingDate}`);
         
         const result = {
           cik: cik,
@@ -455,14 +466,19 @@ async function getLastReport(cik, type = 'all') {
         // Сохранение в кэш
         if (cache.CACHE_CONFIG.metrics.enabled && result) {
           cache.setToCache(cache.metricsCache, cacheKey, result, cache.CACHE_CONFIG.metrics.ttl, cache.CACHE_CONFIG.metrics.maxSize);
+          log(`[getLastReport] Результат сохранен в кэш: ${cacheKey}`);
         }
         
         return result;
+      } else {
+        log(`[getLastReport] Пропускаем: fy или fp отсутствуют (fy=${fyValue}, fp=${fpValue})`);
       }
+    } else {
+      log(`[getLastReport] Нет совпадения по filed для filingDate=${filingDate}`);
     }
   }
 
-  log(`getLastReport: Отчет не найден для CIK ${cik}, type=${type}`);
+  log(`[getLastReport] НЕ НАЙДЕН: отчет для CIK ${cik}, type=${type}`);
   return null;
 }
 
