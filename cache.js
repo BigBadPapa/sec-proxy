@@ -2,13 +2,13 @@
 
 // ============ 1. КОНФИГ КЭШЕЙ ==========
 const CACHE_CONFIG = {
-  tickers: { enabled: false, ttl: 24 * 60 * 60 * 1000, maxSize: 1 },
-  cik: { enabled: false, ttl: 24 * 60 * 60 * 1000, maxSize: 500 },
-  facts: { enabled: false, ttl: 6 * 60 * 60 * 1000, maxSize: 20 },
-  submissions: { enabled: false, ttl: 24 * 60 * 60 * 1000, maxSize: 20 },
-  metrics: { enabled: false, ttl: 5 * 60 * 1000, maxSize: 1000 },
-  quarterParse: { enabled: false, ttl: Infinity, maxSize: 50 },
-  companyMeta: { enabled: false, ttl: 24 * 60 * 60 * 1000, maxSize: 500 }
+  tickers: { enabled: true, ttl: 24 * 60 * 60 * 1000, maxSize: 1 },
+  cik: { enabled: true, ttl: 24 * 60 * 60 * 1000, maxSize: 500 },
+  facts: { enabled: true, ttl: 6 * 60 * 60 * 1000, maxSize: 20 },
+  submissions: { enabled: true, ttl: 24 * 60 * 60 * 1000, maxSize: 20 },
+  metrics: { enabled: true, ttl: 60 * 60 * 1000, maxSize: 1000 }, // TTL 1 час для отчетов
+  quarterParse: { enabled: true, ttl: Infinity, maxSize: 50 },
+  companyMeta: { enabled: true, ttl: 24 * 60 * 60 * 1000, maxSize: 500 }
 };
 
 // ============ 2. ПЕРЕМЕННЫЕ КЭШЕЙ ==========
