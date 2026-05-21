@@ -288,13 +288,43 @@ async function getLastReport(cik, type = 'all') {
     return null;
   }
 
-  const recent = subData.filings.recent;
-  const forms = recent.form || [];
-  const accessionNumbers = recent.accessionNumber || [];
-  const reportDates = recent.reportDate || [];
-  const primaryDocuments = recent.primaryDocument || [];
-  const fy = recent.fy || [];
-  const fp = recent.fp || [];
+  const factsData = await getCompanyFacts(cik);
+  if (!factsData || !factsData.facts) {
+    log(`getLastReport: нет XBRL данных для CIK ${cik}`);
+    return null;
+  }
+
+  // Находим тег Assets в любой таксономии
+  let assetsData = null;
+  const taxonomies = ['us-gaap', 'ifrs-full', 'srt'];
+  for (const taxonomy of taxonomies) {
+    const taxData = factsData.facts[taxonomy];
+    if (taxData && taxData.Assets) {
+      assetsData = taxData.Assets;
+      break;
+    }
+  }
+
+  if (!assetsData || !assetsData.units) {
+    log(`getLastReport: тег Assets не найден для CIK ${cik}`);
+    return null;
+  }
+
+  // Берем первый доступный юнит (обычно USD)
+  const unitKey = Object.keys(assetsData.units)[0];
+  const assetsValues = assetsData.units[unitKey] || [];
+
+  if (assetsValues.length === 0) {
+    log(`getLastReport: нет значений Assets для CIK ${cik}`);
+    return null;
+  }
+
+  // Сортируем значения по дате filed (от новых к старым)
+  const sortedAssets = assetsValues.sort((a, b) => {
+    const filedA = a.filed ? new Date(a.filed).getTime() : 0;
+    const filedB = b.filed ? new Date(b.filed).getTime() : 0;
+    return filedB - filedA;
+  });
 
   // Определяем допустимые формы
   let allowedForms = [];
@@ -306,55 +336,54 @@ async function getLastReport(cik, type = 'all') {
     allowedForms = ['10-K', '10-Q', '20-F', '40-F', '6-K'];
   }
 
-  log(`getLastReport: Поиск для CIK ${cik}, тип ${type}. Всего форм: ${forms.length}`);
+  const recent = subData.filings.recent;
+  const forms = recent.form || [];
+  const accessionNumbers = recent.accessionNumber || [];
+  const filingDates = recent.filingDate || [];
+  const primaryDocuments = recent.primaryDocument || [];
 
-  // Идем по原始ным индексам, от самых свежих (0) до более старых
+  log(`getLastReport: Поиск для CIK ${cik}, тип ${type}. Всего отчетов: ${forms.length}`);
+
+  // Перебираем отчеты от самых свежих
   for (let i = 0; i < forms.length; i++) {
     const form = forms[i];
-    if (!allowedForms.includes(form)) {
-      continue;
-    }
-
-    // Для 6-K обязательно наличие reportDate
-    if (form === '6-K') {
-      const reportDate = reportDates[i];
-      if (!reportDate || reportDate === '') {
-        log(`getLastReport: Пропускаем 6-K индекс ${i} без reportDate`);
-        continue;
-      }
-    }
+    if (!allowedForms.includes(form)) continue;
 
     const accessionNumberRaw = accessionNumbers[i];
     const primaryDocument = primaryDocuments[i];
-    const fyValue = fy[i];
-    const fpValue = fp[i];
-    const reportDate = reportDates[i];
+    const filingDate = filingDates[i];
 
-    // ВАЖНО: Проверяем, что все необходимые поля для отчета есть
-    if (!accessionNumberRaw || !primaryDocument || fyValue === undefined || fpValue === undefined) {
-      log(`getLastReport: Пропускаем индекс ${i} (${form}) из-за отсутствующих данных. fy=${fyValue}, fp=${fpValue}, acc=${!!accessionNumberRaw}, doc=${!!primaryDocument}`);
-      continue;
+    if (!accessionNumberRaw || !primaryDocument) continue;
+
+    // Ищем в XBRL значения Assets, которые соответствуют этой дате подачи
+    let matchingAsset = null;
+    for (const asset of sortedAssets) {
+      if (asset.filed === filingDate) {
+        matchingAsset = asset;
+        break;
+      }
     }
 
-    // Убеждаемся, что fp начинается с 'Q' для квартальных или что это годовой отчет (FY)
-    if (!fpValue.startsWith('Q') && type !== 'annual') {
-        log(`getLastReport: Пропускаем индекс ${i} (${form}) - fp не начинается с Q: ${fpValue}`);
-        continue;
+    if (matchingAsset) {
+      const fyValue = matchingAsset.fy;
+      const fpValue = matchingAsset.fp;
+      
+      if (fyValue && fpValue) {
+        log(`getLastReport: НАЙДЕН отчет! Индекс ${i}, Форма ${form}, FY=${fyValue}, FP=${fpValue}`);
+        
+        const accessionNumber = accessionNumberRaw.replace(/-/g, '');
+        return {
+          form: form,
+          fy: fyValue,
+          fp: fpValue,
+          accessionNumber: accessionNumber,
+          accessionNumberRaw: accessionNumberRaw,
+          primaryDocument: primaryDocument,
+          filingDate: filingDate || null,
+          reportDate: matchingAsset.end || null
+        };
+      }
     }
-
-    log(`getLastReport: НАЙДЕН отчет! Индекс ${i}, Форма ${form}, FY=${fyValue}, FP=${fpValue}, Accession=${accessionNumberRaw}`);
-
-    const accessionNumber = accessionNumberRaw.replace(/-/g, '');
-    return {
-      form: form,
-      fy: fyValue,
-      fp: fpValue,
-      accessionNumber: accessionNumber,
-      accessionNumberRaw: accessionNumberRaw,
-      primaryDocument: primaryDocument,
-      filingDate: recent.filingDate[i] || null,
-      reportDate: reportDate || null
-    };
   }
 
   log(`getLastReport: Отчет не найден для CIK ${cik}, type=${type}`);
