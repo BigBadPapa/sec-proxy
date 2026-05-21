@@ -53,13 +53,8 @@ function formatReportLinkForGas(report, cik) {
   const htmlUrl = `https://www.sec.gov/Archives/edgar/data/${parseInt(cik)}/${report.accessionNumber}/${report.primaryDocument}`;
   const xbrlUrl = `https://www.sec.gov/ix?doc=/Archives/edgar/data/${parseInt(cik)}/${report.accessionNumber}/${report.primaryDocument}`;
   
-  // Возвращаем объект с данными для построения формулы в GAS
-  return {
-    htmlUrl: htmlUrl,
-    xbrlUrl: xbrlUrl,
-    fp: report.fp,
-    fy: report.fy
-  };
+  // Возвращаем готовую формулу строкой
+  return `=ГИПЕРССЫЛКА("${htmlUrl}"; "${report.fp}")&" "&ГИПЕРССЫЛКА("${xbrlUrl}"; "${report.fy}")`;
 }
 
 async function processEdgar(req, res) {
