@@ -9,7 +9,7 @@ const USER_AGENT = 'GoogleSheetsSEC contact@example.com';
 const SEC_BASE = 'https://www.sec.gov';
 const DATA_BASE = 'https://data.sec.gov';
 
-// ============ 2. БАЗОВЫЕ УТИЛИТЫ ==========
+// ============ 2. БАЗОВЫЕ УТИЛИТЫ (без изменений) ==========
 
 function log(message, data = null) {
   const timestamp = new Date().toISOString();
@@ -100,7 +100,7 @@ function applyScale(value, scale) {
   }
 }
 
-// ============ 3. НОРМАЛИЗАЦИЯ ==========
+// ============ 3. НОРМАЛИЗАЦИЯ (без изменений) ==========
 
 function normalizeTicker(ticker) {
   if (!ticker) return null;
@@ -279,9 +279,80 @@ async function getSubmissionsData(cik) {
   return data;
 }
 
-// ============ 7. ФУНКЦИИ ДЛЯ ОТЧЕТОВ ==========
+// ============ 7. НОВЫЕ ФУНКЦИИ ДЛЯ ПОИСКА ОТЧЕТОВ ==========
 
+/**
+ * Формирует URL документа отчета
+ * @param {string} cik - CIK компании (10 цифр)
+ * @param {string} accessionNumberRaw - Accession номер с дефисами (например, "0000018230-26-000021")
+ * @param {string} primaryDocument - Имя файла (например, "cat-20260331.htm")
+ * @param {string} format - Формат: 'html' или 'xbrl'
+ * @returns {string} Полный URL к документу
+ */
+function buildDocumentUrl(cik, accessionNumberRaw, primaryDocument, format) {
+  const cikNumber = parseInt(cik, 10);
+  const accessionNumber = accessionNumberRaw.replace(/-/g, '');
+  
+  if (format === 'html') {
+    return `${SEC_BASE}/Archives/edgar/data/${cikNumber}/${accessionNumber}/${primaryDocument}`;
+  } else if (format === 'xbrl') {
+    return `${SEC_BASE}/ix?doc=/Archives/edgar/data/${cikNumber}/${accessionNumber}/${primaryDocument}`;
+  }
+  return null;
+}
+
+/**
+ * Форматирует строку с информацией об отчете для GAS
+ * @param {Object} report - Объект отчета (из getLastReport)
+ * @param {string} format - Формат: 'text', 'html', 'xbrl'
+ * @returns {string} Отформатированная строка
+ */
+function formatReportString(report, format) {
+  if (!report) return 'Н/Д';
+  
+  if (format === 'text') {
+    const year = report.fy;
+    const fp = report.fp;
+    
+    // Годовой отчет: FY 2025
+    if (fp === 'FY' || report.form === '10-K' || report.form === '20-F' || report.form === '40-F') {
+      return `FY ${year}`;
+    }
+    // Квартальный отчет: Q2 2026
+    const quarterNum = fp.replace('Q', '');
+    return `Q${quarterNum} ${year}`;
+  }
+  
+  if (format === 'html') {
+    return buildDocumentUrl(report.cik, report.accessionNumberRaw, report.primaryDocument, 'html');
+  }
+  
+  if (format === 'xbrl') {
+    return buildDocumentUrl(report.cik, report.accessionNumberRaw, report.primaryDocument, 'xbrl');
+  }
+  
+  return 'Н/Д';
+}
+
+/**
+ * Находит последний earnings отчет компании (с кэшированием)
+ * @param {string} cik - CIK компании
+ * @param {string} type - Тип отчета: 'annual', 'quarterly', 'all'
+ * @returns {Object|null} Объект с данными отчета или null
+ */
 async function getLastReport(cik, type = 'all') {
+  const cacheKey = `lastreport:${cik}:${type}`;
+  
+  // Проверка кэша
+  if (cache.CACHE_CONFIG.metrics.enabled) {
+    const cached = cache.getFromCache(cache.metricsCache, cacheKey, cache.CACHE_CONFIG.metrics.ttl);
+    if (cached !== null) {
+      log(`getLastReport: кэш HIT для ${cacheKey}`);
+      return cached;
+    }
+    log(`getLastReport: кэш MISS для ${cacheKey}`);
+  }
+  
   const subData = await getSubmissionsData(cik);
   if (!subData || !subData.filings || !subData.filings.recent) {
     log(`getLastReport: нет данных для CIK ${cik}`);
@@ -294,6 +365,7 @@ async function getLastReport(cik, type = 'all') {
     return null;
   }
 
+  // Поиск тега Assets в XBRL
   let assetsData = null;
   const taxonomies = ['us-gaap', 'ifrs-full', 'srt'];
   for (const taxonomy of taxonomies) {
@@ -317,12 +389,14 @@ async function getLastReport(cik, type = 'all') {
     return null;
   }
 
+  // Сортировка Assets по дате filed
   const sortedAssets = assetsValues.sort((a, b) => {
     const filedA = a.filed ? new Date(a.filed).getTime() : 0;
     const filedB = b.filed ? new Date(b.filed).getTime() : 0;
     return filedB - filedA;
   });
 
+  // Определение допустимых форм в зависимости от типа
   let allowedForms = [];
   if (type === 'annual') {
     allowedForms = ['10-K', '20-F', '40-F'];
@@ -340,6 +414,7 @@ async function getLastReport(cik, type = 'all') {
 
   log(`getLastReport: Поиск для CIK ${cik}, тип ${type}. Всего отчетов: ${forms.length}`);
 
+  // Поиск отчета (от новых к старым)
   for (let i = 0; i < forms.length; i++) {
     const form = forms[i];
     if (!allowedForms.includes(form)) continue;
@@ -350,6 +425,7 @@ async function getLastReport(cik, type = 'all') {
 
     if (!accessionNumberRaw || !primaryDocument) continue;
 
+    // Поиск соответствующего Assets по дате filed
     let matchingAsset = null;
     for (const asset of sortedAssets) {
       if (asset.filed === filingDate) {
@@ -363,51 +439,31 @@ async function getLastReport(cik, type = 'all') {
       const fpValue = matchingAsset.fp;
       
       if (fyValue && fpValue) {
-        log(`getLastReport: НАЙДЕН отчет! Индекс ${i}, Форма ${form}, FY=${fyValue}, FP=${fpValue}`);
+        log(`getLastReport: НАЙДЕН отчет! Индекс ${i}, Форма ${form}, FY=${fyValue}, FP=${fpValue}, filingDate=${filingDate}`);
         
-        const accessionNumber = accessionNumberRaw.replace(/-/g, '');
-        return {
+        const result = {
+          cik: cik,
           form: form,
           fy: fyValue,
           fp: fpValue,
-          accessionNumber: accessionNumber,
           accessionNumberRaw: accessionNumberRaw,
           primaryDocument: primaryDocument,
           filingDate: filingDate || null,
           reportDate: matchingAsset.end || null
         };
+        
+        // Сохранение в кэш
+        if (cache.CACHE_CONFIG.metrics.enabled && result) {
+          cache.setToCache(cache.metricsCache, cacheKey, result, cache.CACHE_CONFIG.metrics.ttl, cache.CACHE_CONFIG.metrics.maxSize);
+        }
+        
+        return result;
       }
     }
   }
 
   log(`getLastReport: Отчет не найден для CIK ${cik}, type=${type}`);
   return null;
-}
-
-async function getCompanyCurrency(cik) {
-  const factsData = await getCompanyFacts(cik);
-  if (!factsData || !factsData.facts) {
-    log(`getCompanyCurrency: нет данных для CIK ${cik}`);
-    return 'N/A';
-  }
-  
-  const taxonomies = ['us-gaap', 'ifrs-full', 'srt'];
-  for (const taxonomy of taxonomies) {
-    const taxData = factsData.facts[taxonomy];
-    if (!taxData) continue;
-    
-    const firstTag = Object.keys(taxData)[0];
-    if (firstTag && taxData[firstTag].units) {
-      const units = Object.keys(taxData[firstTag].units);
-      if (units.length > 0) {
-        log(`getCompanyCurrency: найдена валюта ${units[0]} для CIK ${cik}`);
-        return units[0];
-      }
-    }
-  }
-  
-  log(`getCompanyCurrency: валюта не найдена для CIK ${cik}`);
-  return 'N/A';
 }
 
 // ============ 8. ЭКСПОРТ ==========
@@ -433,6 +489,7 @@ module.exports = {
   getCIK,
   getCompanyFacts,
   getSubmissionsData,
-  getLastReport,
-  getCompanyCurrency
+  buildDocumentUrl,
+  formatReportString,
+  getLastReport
 };
