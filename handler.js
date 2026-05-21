@@ -46,7 +46,7 @@ function formatResponse(success, data, isBatch = false, error = null) {
   }
 }
 
-// Формирует строку с гиперссылками для отчета (для GAS)
+// Формирует объект с данными для построения формулы в GAS
 function formatReportLinkForGas(report, cik) {
   if (!report) return 'Н/Д';
   
@@ -155,8 +155,8 @@ async function processInfo(req, res) {
       if (!report) {
         return res.json(formatResponse(true, 'Н/Д', false));
       }
-      const displayValue = formatReportLinkForGas(report, cik);
-      return res.json(formatResponse(true, displayValue, false));
+      const linkData = formatReportLinkForGas(report, cik);
+      return res.json(formatResponse(true, linkData, false));
     }
     
     // lastreporta - последний годовой earnings отчет
@@ -169,8 +169,8 @@ async function processInfo(req, res) {
       if (!report) {
         return res.json(formatResponse(true, 'Н/Д', false));
       }
-      const displayValue = formatReportLinkForGas(report, cik);
-      return res.json(formatResponse(true, displayValue, false));
+      const linkData = formatReportLinkForGas(report, cik);
+      return res.json(formatResponse(true, linkData, false));
     }
     
     // lastreportq - последний квартальный earnings отчет
@@ -183,8 +183,8 @@ async function processInfo(req, res) {
       if (!report) {
         return res.json(formatResponse(true, 'Н/Д', false));
       }
-      const displayValue = formatReportLinkForGas(report, cik);
-      return res.json(formatResponse(true, displayValue, false));
+      const linkData = formatReportLinkForGas(report, cik);
+      return res.json(formatResponse(true, linkData, false));
     }
     
     // currency - валюта отчетности
