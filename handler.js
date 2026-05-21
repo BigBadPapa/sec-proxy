@@ -46,20 +46,9 @@ function formatResponse(success, data, isBatch = false, error = null) {
   }
 }
 
-// Формирует объект с данными для отчета (GAS будет использовать для создания гиперссылок)
 function formatReportLinkForGas(report, cik) {
   if (!report) return 'Н/Д';
-  
-  const htmlUrl = `https://www.sec.gov/Archives/edgar/data/${parseInt(cik)}/${report.accessionNumber}/${report.primaryDocument}`;
-  const xbrlUrl = `https://www.sec.gov/ix?doc=/Archives/edgar/data/${parseInt(cik)}/${report.accessionNumber}/${report.primaryDocument}`;
-  
-  // Возвращаем объект с данными
-  return {
-    fp: report.fp,
-    fy: report.fy,
-    htmlUrl: htmlUrl,
-    xbrlUrl: xbrlUrl
-  };
+  return report.fp;
 }
 
 async function processEdgar(req, res) {
@@ -134,18 +123,13 @@ async function processInfo(req, res) {
       return res.json(formatResponse(false, null, false, 'Тикер не указан'));
     }
     
-    // Нормализация field: если массив, берем первый элемент
     let normalizedField = rawField;
     if (Array.isArray(normalizedField)) {
       normalizedField = normalizedField[0];
     }
     
-    // Приводим к строке и убираем пробелы
     const fieldStr = normalizedField ? normalizedField.toString().trim().toLowerCase() : '';
     
-    // ============ ОБРАБОТКА СПЕЦИАЛЬНЫХ ПОЛЕЙ ============
-    
-    // lastreport - последний earnings отчет (любой)
     if (fieldStr === 'lastreport') {
       const cik = await common.getCIK(ticker);
       if (!cik) {
@@ -159,7 +143,6 @@ async function processInfo(req, res) {
       return res.json(formatResponse(true, linkData, false));
     }
     
-    // lastreporta - последний годовой earnings отчет
     if (fieldStr === 'lastreporta') {
       const cik = await common.getCIK(ticker);
       if (!cik) {
@@ -173,7 +156,6 @@ async function processInfo(req, res) {
       return res.json(formatResponse(true, linkData, false));
     }
     
-    // lastreportq - последний квартальный earnings отчет
     if (fieldStr === 'lastreportq') {
       const cik = await common.getCIK(ticker);
       if (!cik) {
@@ -187,7 +169,6 @@ async function processInfo(req, res) {
       return res.json(formatResponse(true, linkData, false));
     }
     
-    // currency - валюта отчетности
     if (fieldStr === 'currency') {
       const cik = await common.getCIK(ticker);
       if (!cik) {
@@ -197,9 +178,6 @@ async function processInfo(req, res) {
       return res.json(formatResponse(true, currency, false));
     }
     
-    // ============ ОБЫЧНАЯ ОБРАБОТКА INFO (batch и одно поле) ============
-    
-    // Определяем, batch это или нет
     let fieldsArray = [];
     let isBatch = false;
     
