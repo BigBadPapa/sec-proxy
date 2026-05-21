@@ -113,8 +113,13 @@ async function processInfo(req, res) {
   try {
     const { ticker: rawTicker, field: rawField } = req.body;
     
+    common.log(`[processInfo] НАЧАЛО: rawTicker=${rawTicker}, rawField=${JSON.stringify(rawField)}`);
+    
     const ticker = common.normalizeTicker(rawTicker);
+    common.log(`[processInfo] После normalizeTicker: ticker=${ticker}`);
+    
     if (!ticker) {
+      common.log(`[processInfo] ОШИБКА: Тикер не указан`);
       return res.json(formatResponse(false, null, false, 'Тикер не указан'));
     }
     
@@ -126,6 +131,7 @@ async function processInfo(req, res) {
     
     if (typeof rawField === 'string') {
       fieldStr = rawField.trim().toLowerCase();
+      common.log(`[processInfo] fieldStr=${fieldStr}`);
       
       // Проверка на специальные поля для отчетов
       const specialFields = {
@@ -144,96 +150,144 @@ async function processInfo(req, res) {
         isSpecialField = true;
         specialFieldType = specialFields[fieldStr].type;
         specialFieldFormat = specialFields[fieldStr].format;
+        common.log(`[processInfo] Обнаружено специальное поле: type=${specialFieldType}, format=${specialFieldFormat}`);
       }
     }
     
-    // Обработка специальных полей (lastreport и т.д.)
+    // ============ ОБРАБОТКА СПЕЦИАЛЬНЫХ ПОЛЕЙ (lastreport и т.д.) ============
     if (isSpecialField) {
+      common.log(`[processInfo] Начало обработки специального поля: fieldStr=${fieldStr}`);
+      
       const cik = await common.getCIK(ticker);
+      common.log(`[processInfo] getCIK вернул: ${cik}`);
+      
       if (!cik) {
+        common.log(`[processInfo] ОШИБКА: CIK не найден для тикера ${ticker}`);
         return res.json(formatResponse(false, null, false, 'Тикер не найден'));
       }
       
+      common.log(`[processInfo] Вызов common.getLastReport(${cik}, ${specialFieldType})`);
       const report = await common.getLastReport(cik, specialFieldType);
+      common.log(`[processInfo] getLastReport вернул: ${report ? 'отчет найден' : 'null'}`);
+      
+      if (report) {
+        common.log(`[processInfo] report.fy=${report.fy}, report.fp=${report.fp}, report.form=${report.form}`);
+      }
+      
+      common.log(`[processInfo] Вызов common.formatReportString с format=${specialFieldFormat}`);
       const result = common.formatReportString(report, specialFieldFormat);
+      common.log(`[processInfo] formatReportString вернул: ${result}`);
+      
+      common.log(`[processInfo] Возвращаем результат для специального поля`);
       return res.json(formatResponse(true, result, false));
     }
     
-    // Обычные поля (массив или строка)
+    // ============ ОБЫЧНЫЕ ПОЛЯ (массив или строка) ============
+    common.log(`[processInfo] Обработка обычных полей`);
+    
     let fieldsArray = [];
     let isBatch = false;
     
     if (Array.isArray(rawField)) {
       fieldsArray = rawField.flat().filter(f => f && f.toString().trim() !== '');
       isBatch = true;
+      common.log(`[processInfo] rawField - массив, полей: ${fieldsArray.length}, isBatch=${isBatch}`);
     } else if (typeof rawField === 'string' && (rawField.includes(',') || rawField.includes('/'))) {
       const separator = rawField.includes(',') ? ',' : '/';
       fieldsArray = rawField.split(separator).map(f => f.trim());
       isBatch = true;
+      common.log(`[processInfo] rawField - строка с разделителем '${separator}', полей: ${fieldsArray.length}, isBatch=${isBatch}`);
     } else if (typeof rawField === 'string') {
       fieldsArray = [rawField];
       isBatch = false;
+      common.log(`[processInfo] rawField - одиночная строка: ${rawField}, isBatch=${isBatch}`);
     } else if (rawField) {
       fieldsArray = [String(rawField)];
       isBatch = false;
+      common.log(`[processInfo] rawField - прочий тип, приведен к строке`);
+    } else {
+      common.log(`[processInfo] rawField пустой`);
     }
     
     if (fieldsArray.length === 0) {
+      common.log(`[processInfo] ОШИБКА: Поля не указаны`);
       return res.json(formatResponse(false, null, false, 'Поля не указаны'));
     }
+    
+    common.log(`[processInfo] fieldsArray: [${fieldsArray.join(', ')}]`);
     
     const resolvedFields = [];
     const notFound = [];
     
     for (const f of fieldsArray) {
+      common.log(`[processInfo] Резолвинг поля: ${f}`);
       const resolved = common.resolveAlias(f, 'info');
       if (resolved) {
         resolvedFields.push(resolved);
+        common.log(`[processInfo]   -> резолвлено в: ${resolved}`);
       } else {
         notFound.push(f);
+        common.log(`[processInfo]   -> НЕ НАЙДЕНО`);
       }
     }
     
+    common.log(`[processInfo] resolvedFields: [${resolvedFields.join(', ')}], notFound: [${notFound.join(', ')}]`);
+    
     if (resolvedFields.length === 0) {
+      common.log(`[processInfo] ОШИБКА: Поля не найдены`);
       return res.json(formatResponse(false, null, isBatch, 'Поля не найдены'));
     }
     
+    common.log(`[processInfo] Вызов common.getCIK(${ticker})`);
     const cik = await common.getCIK(ticker);
+    common.log(`[processInfo] getCIK вернул: ${cik}`);
+    
     if (!cik) {
+      common.log(`[processInfo] ОШИБКА: Тикер не найден`);
       return res.json(formatResponse(false, null, isBatch, 'Тикер не найден'));
     }
     
+    common.log(`[processInfo] Вызов common.getSubmissionsData(${cik})`);
     const subData = await common.getSubmissionsData(cik);
     if (!subData) {
+      common.log(`[processInfo] ОШИБКА: Не удалось получить submissions`);
       return res.json(formatResponse(false, null, isBatch, 'Ошибка получения данных из SEC'));
     }
+    common.log(`[processInfo] subData получен`);
     
     const results = [];
     for (const resolved of resolvedFields) {
+      common.log(`[processInfo] Извлечение значения для поля: ${resolved}`);
       const keys = resolved.split('.');
       let value = subData;
       for (const key of keys) {
         if (value === null || value === undefined) {
+          common.log(`[processInfo]   -> ключ ${key} не найден, value становится null`);
           value = null;
           break;
         }
         value = value[key];
+        common.log(`[processInfo]   -> ключ ${key} = ${typeof value === 'object' ? JSON.stringify(value).substring(0, 50) : value}`);
       }
       results.push(value !== null && value !== undefined ? value : null);
     }
     
+    common.log(`[processInfo] results: [${results.map(r => r === null ? 'null' : r).join(', ')}]`);
+    
     if (notFound.length > 0) {
+      common.log(`[processInfo] Возврат с notFound: ${notFound.join(', ')}`);
       return res.json(formatResponse(true, results, isBatch, `Не найдены: ${notFound.join(', ')}`));
     }
     
+    common.log(`[processInfo] УСПЕХ! Возврат результата`);
     return res.json(formatResponse(true, results, isBatch));
     
   } catch (error) {
+    common.log(`[processInfo] КРИТИЧЕСКАЯ ОШИБКА: ${error.message}`);
     console.error('processInfo error:', error);
     return res.json(formatResponse(false, null, false, error.message));
   }
 }
-
 module.exports = {
   processEdgar,
   processInfo
