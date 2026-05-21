@@ -46,15 +46,20 @@ function formatResponse(success, data, isBatch = false, error = null) {
   }
 }
 
-// Формирует объект с данными для построения формулы в GAS
+// Формирует объект с данными для отчета (GAS будет использовать для создания гиперссылок)
 function formatReportLinkForGas(report, cik) {
   if (!report) return 'Н/Д';
   
   const htmlUrl = `https://www.sec.gov/Archives/edgar/data/${parseInt(cik)}/${report.accessionNumber}/${report.primaryDocument}`;
   const xbrlUrl = `https://www.sec.gov/ix?doc=/Archives/edgar/data/${parseInt(cik)}/${report.accessionNumber}/${report.primaryDocument}`;
   
-  // Возвращаем готовую формулу строкой
-  return `=ГИПЕРССЫЛКА("${htmlUrl}"; "${report.fp}")&" "&ГИПЕРССЫЛКА("${xbrlUrl}"; "${report.fy}")`;
+  // Возвращаем объект с данными
+  return {
+    fp: report.fp,
+    fy: report.fy,
+    htmlUrl: htmlUrl,
+    xbrlUrl: xbrlUrl
+  };
 }
 
 async function processEdgar(req, res) {
