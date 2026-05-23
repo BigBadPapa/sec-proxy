@@ -156,28 +156,24 @@ async function getInfo(req, res) {
     
     // ============ ОБРАБОТКА СПЕЦИАЛЬНЫХ ПОЛЕЙ ============
     
-    // lastreport - последний earnings отчет (любой)
     if (fieldRaw === 'lastreport') {
       const report = await common.getLastReport(cik, 'all');
       if (!report) return res.json({ field: 'lastreport', value: 'Н/Д' });
-      return res.json({ field: 'lastreport', value: formatReportLink(report, cik) });
+      return res.json({ field: 'lastreport', value: `${report.fp} ${report.fy}` });
     }
     
-    // lastreporta - последний годовой earnings отчет
     if (fieldRaw === 'lastreporta') {
       const report = await common.getLastReport(cik, 'annual');
       if (!report) return res.json({ field: 'lastreporta', value: 'Н/Д' });
-      return res.json({ field: 'lastreporta', value: formatReportLink(report, cik) });
+      return res.json({ field: 'lastreporta', value: `${report.fp} ${report.fy}` });
     }
     
-    // lastreportq - последний квартальный earnings отчет
     if (fieldRaw === 'lastreportq') {
       const report = await common.getLastReport(cik, 'quarterly');
       if (!report) return res.json({ field: 'lastreportq', value: 'Н/Д' });
-      return res.json({ field: 'lastreportq', value: formatReportLink(report, cik) });
+      return res.json({ field: 'lastreportq', value: `${report.fp} ${report.fy}` });
     }
     
-    // currency - валюта отчетности
     if (fieldRaw === 'currency') {
       const currency = await common.getCompanyCurrency(cik);
       return res.json({ field: 'currency', value: currency });
@@ -187,6 +183,18 @@ async function getInfo(req, res) {
     
     const subData = await common.getSubmissionsData(cik);
     if (!subData) return res.status(500).json({ error: 'Ошибка получения данных' });
+    
+    // Вспомогательные функции
+    const arrayToString = (arr) => {
+      if (!arr) return null;
+      if (Array.isArray(arr) && arr.length > 0) return arr.join(', ');
+      return null;
+    };
+    
+    const formerNamesToString = (formerNames) => {
+      if (!formerNames || formerNames.length === 0) return null;
+      return formerNames.map(fn => fn.name).join(', ');
+    };
     
     // BATCH РЕЖИМ: несколько полей
     if (fieldsRaw) {
@@ -201,7 +209,15 @@ async function getInfo(req, res) {
           if (value === null || value === undefined) break;
           value = value[key];
         }
-        result[f] = (value !== null && value !== undefined) ? value : null;
+        
+        // Преобразуем массивы в строки
+        if (Array.isArray(value) && (resolvedField === 'tickers' || resolvedField === 'exchanges')) {
+          result[f] = arrayToString(value);
+        } else if (Array.isArray(value) && resolvedField === 'formerNames') {
+          result[f] = formerNamesToString(value);
+        } else {
+          result[f] = (value !== null && value !== undefined) ? value : null;
+        }
       }
       
       return res.json(result);
@@ -220,29 +236,55 @@ async function getInfo(req, res) {
         value = value[key];
       }
       
+      // Преобразуем массивы в строки
+      if (Array.isArray(value) && (resolvedField === 'tickers' || resolvedField === 'exchanges')) {
+        value = arrayToString(value);
+      } else if (Array.isArray(value) && resolvedField === 'formerNames') {
+        value = formerNamesToString(value);
+      }
+      
       return res.json({ field: resolvedField, value: (value !== null && value !== undefined) ? value : null });
     }
     
-    // ВСЕ ПОЛЯ
+    // ВСЕ ПОЛЯ (полная информация)
     res.json({
-      cik: subData.cik,
-      name: subData.entityName,
+      // Основные
+      cik: subData.cik || null,
+      name: subData.entityName || null,
       ein: subData.ein || null,
       entityType: subData.entityType || null,
       description: subData.description || null,
-      tickers: subData.tickers || [],
-      exchanges: subData.exchanges || [],
+      ownerOrg: subData.ownerOrg || null,
+      lei: subData.lei || null,
+      flags: subData.flags || null,
+      
+      // Коды и категории
       sic: subData.sic || null,
       sicDescription: subData.sicDescription || null,
       category: subData.category || null,
-      stateOfIncorporation: subData.stateOfIncorporation || null,
       fiscalYearEnd: subData.fiscalYearEnd || null,
+      stateOfIncorporation: subData.stateOfIncorporation || null,
+      stateOfIncorporationDescription: subData.stateOfIncorporationDescription || null,
+      
+      // Контакты
       phone: subData.phone || null,
       website: subData.website || null,
+      investorWebsite: subData.investorWebsite || null,
+      
+      // Рыночные (преобразованы в строку)
+      tickers: arrayToString(subData.tickers),
+      exchanges: arrayToString(subData.exchanges),
+      
+      // Инсайдеры
+      insiderTransactionForOwnerExists: subData.insiderTransactionForOwnerExists !== undefined ? subData.insiderTransactionForOwnerExists : null,
+      insiderTransactionForIssuerExists: subData.insiderTransactionForIssuerExists !== undefined ? subData.insiderTransactionForIssuerExists : null,
+      
+      // Адреса (объекты)
       businessAddress: subData.addresses?.business || null,
       mailingAddress: subData.addresses?.mailing || null,
-      formerNames: subData.formerNames || [],
-      flags: subData.flags || null
+      
+      // История (преобразована в строку)
+      formerNames: formerNamesToString(subData.formerNames),
     });
     
   } catch (error) {
