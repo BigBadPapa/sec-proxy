@@ -875,69 +875,99 @@ const ALIASES = {
   "пер акцию дивиденды": "dividendspershare",
   
   // ===== INFO поля (для EDGAR_INFO) =====
-  "lastreport": "lastreport",
-  "последнийотчет": "lastreport",
-  "lastreporta": "lastreporta",
-  "последнийгодовой": "lastreporta",
-  "последнийгодовойотчет": "lastreporta",
-  "lastreportq": "lastreportq",
-  "последнийквартальный": "lastreportq",
-  "последнийквартальныйотчет": "lastreportq",
-  "currency": "currency",
-  "валюта": "currency",
-  "cik": "cik",
-  "сик": "cik",
-  "name": "name",
-  "имя": "name",
-  "название": "name",
-  "наименование": "name",
-  "ein": "ein",
-  "инн": "ein",
-  "description": "description",
-  "описание": "description",
-  "category": "category",
-  "категория": "category",
-  "fiscalyearend": "fiscalYearEnd",
-  "конецгода": "fiscalYearEnd",
-  "конецфин.года": "fiscalYearEnd",
-  "конецфинансовогогода": "fiscalYearEnd",
-  "stateofincorporation": "stateOfIncorporation",
-  "state_of_incorporation": "stateOfIncorporation",
-  "штат": "stateOfIncorporation",
-  "phone": "phone",
-  "телефон": "phone",
-  "website": "website",
-  "site": "website",
-  "сайт": "website",
-  "investorwebsite": "investorWebsite",
-  "сайтинвесторов": "investorWebsite",
-  "сайтинвестора": "investorWebsite",
-  "сайтдляинвесторов": "investorWebsite",
-  "businessaddress": "businessAddress",
-  "адрес": "businessAddress",
-  "бизнесадрес": "businessAddress",
-  "адресбизнеса": "businessAddress",
-  "адреспредприятия": "businessAddress",
-  "mailingaddress": "mailingAddress",
-  "почтовыйадрес": "mailingAddress",
-  "tickers": "tickers",
-  "тикеры": "tickers",
-  "exchanges": "exchanges",
-  "биржи": "exchanges",
-  "sic": "sic",
-  "sicdescription": "sicDescription",
-  "sic_description": "sicDescription",
-  "formernames": "formerNames",
-  "бывшиеназвания": "formerNames",
-  "бывшиеимена": "formerNames",
-  "прошлыеназвания": "formerNames",
-  "прошлые имена": "formerNames",
-  "entitytype": "entityType",
-  "тип": "entityType",
-  "flags": "flags",
-  "флаги": "flags"
-};
+  // Основные поля
 
+  "cik": "cik", "сик": "cik",
+  "name": "name", "имя": "name", "название": "name", "наименование": "name",
+  "ein": "ein", "инн": "ein",
+  "entityType": "entityType", "тип": "entityType", "типрегистрации": "entityType", "форма": "entityType", "формарегистрации": "entityType", "категория": "entityType", "категориярегистрации": "entityType", "вид": "entityType",
+  "description": "description", "описание": "description",
+  "ownerOrg": "ownerOrg", "сектор": "ownerOrg",
+  "lei": "lei",
+  "flags": "flags", "флаги": "flags",
+
+  //Коды и категории
+  
+  "sic": "sic", "кодотрасли": "sic", "кодиндустрии": "sic",
+  "sicDescription": "sicDescription", "отрасль": "sicDescription", "идустрия": "sicDescription", "описаниеотрасли": "sicDescription", "описаниеиндустрии": "sicDescription",
+  "category": "category", "категория": "category",
+  "fiscalYearEnd": "fiscalYearEnd", "конецгода": "fiscalYearEnd", "конефин.цгода": "fiscalYearEnd", "конецфинансовогогода": "fiscalYearEnd", "фингод": "fiscalYearEnd",
+  "stateOfIncorporation": "stateOfIncorporation", "штат": "stateOfIncorporation", "штатрегистрации": "stateOfIncorporation",
+  "stateOfIncorporationDescription": "stateOfIncorporationDescription", "штатполный": "stateOfIncorporationDescription",
+  
+  //Контакты
+  
+  "phone": "phone", "телефон": "phone",
+  "website": "website", "сайт": "website", "вебсайт": "website",
+  "investorWebsite": "investorWebsite", "сайт инвесторов": "investorWebsite", "сайт инвестора": "investorWebsite",  "инвесторский сайт": "investorWebsite",  "сайт для инвесторов": "investorWebsite", "сайт для инвестора": "investorWebsite", 
+  
+  //Рыночные
+  
+  "tickers": "tickers", "тикеры": "tickers",
+  "exchanges": "exchanges", "биржи": "exchanges",
+  
+  //Инсайдеры
+  
+  "insiderTransactionForOwnerExists": "insiderTransactionForOwnerExists", "insiderвладелец": "insiderTransactionForOwnerExists", "владелец": "insiderTransactionForOwnerExists",
+  "insiderTransactionForIssuerExists": "insiderTransactionForIssuerExists", "insiderэмитент": "insiderTransactionForIssuerExists", "эмитент": "insiderTransactionForIssuerExists",
+  
+  //Адреса (вложенные)
+  
+  "businessAddress": "businessAddress",
+  "бизнес адрес": "businessAddress",
+  "адрес": "businessAddress",
+  "mailingAddress": "mailingAddress",
+  "почтовый адрес": "mailingAddress",
+  "businessAddress.street1": "addresses.business.street1",
+  "бизнес улица": "addresses.business.street1",
+  "businessAddress.street2": "addresses.business.street2",
+  "бизнес улица 2": "addresses.business.street2",
+  "businessAddress.city": "addresses.business.city",
+  "бизнес город": "addresses.business.city",
+  "businessAddress.stateOrCountry": "addresses.business.stateOrCountry",
+  "бизнес штат": "addresses.business.stateOrCountry",
+  "businessAddress.zipCode": "addresses.business.zipCode",
+  "бизнес индекс": "addresses.business.zipCode",
+  "businessAddress.isForeignLocation": "addresses.business.isForeignLocation",
+  "бизнес зарубеж": "addresses.business.isForeignLocation",
+  "businessAddress.country": "addresses.business.country",
+  "бизнес страна": "addresses.business.country",
+  "businessAddress.countryCode": "addresses.business.countryCode",
+  "бизнес код страны": "addresses.business.countryCode",
+  
+  "mailingAddress.street1": "addresses.mailing.street1",
+  "почтовый улица": "addresses.mailing.street1",
+  "mailingAddress.street2": "addresses.mailing.street2",
+  "почтовый улица 2": "addresses.mailing.street2",
+  "mailingAddress.city": "addresses.mailing.city",
+  "почтовый город": "addresses.mailing.city",
+  "mailingAddress.stateOrCountry": "addresses.mailing.stateOrCountry",
+  "почтовый штат": "addresses.mailing.stateOrCountry",
+  "mailingAddress.zipCode": "addresses.mailing.zipCode",
+  "почтовый индекс": "addresses.mailing.zipCode",
+  "mailingAddress.isForeignLocation": "addresses.mailing.isForeignLocation",
+  "почтовый зарубеж": "addresses.mailing.isForeignLocation",
+  "mailingAddress.country": "addresses.mailing.country",
+  "почтовый страна": "addresses.mailing.country",
+  "mailingAddress.countryCode": "addresses.mailing.countryCode",
+  "почтовый код страны": "addresses.mailing.countryCode",
+  
+  //История
+  
+  "formerNames": "formerNames", "бывшиеназвания": "formerNames", "прошлыеназвания": "formerNames", "бывшиеимена": "formerNames", "прошлыеимена": "formerNames", "предыдущиеназвания": "formerNames", "предыдущиеимена": "formerNames",
+  
+  //Отчеты (специальные поля, уже есть в handler)
+  
+  "lastreport": "lastreport",
+  "lastreporthtml": "lastreporthtml",
+  "lastreportxbrl": "lastreportxbrl",
+  "alastreport": "alastreport",
+  "alastreporthtml": "alastreporthtml",
+  "alastreportxbrl": "alastreportxbrl",
+  "qlastreport": "qlastreport",
+  "qlastreporthtml": "qlastreporthtml",
+  "qlastreportxbrl": "qlastreportxbrl",
+  
 // ============ 3. ДОПОЛНИТЕЛЬНЫЕ СПРАВОЧНИКИ ==========
 
 // Типы отчетов SEC
