@@ -893,7 +893,7 @@ const ALIASES = {
   "category": "category", "категория": "category",
   "fiscalYearEnd": "fiscalYearEnd", "конецгода": "fiscalYearEnd", "конецфингода": "fiscalYearEnd", "конецфинансовогогода": "fiscalYearEnd", "фингод": "fiscalYearEnd",
   "stateOfIncorporation": "stateOfIncorporation", "штат": "stateOfIncorporation", "штатрегистрации": "stateOfIncorporation",
-  "stateOfIncorporationDescription": "stateOfIncorporationDescription", "штатполный": "stateOfIncorporationDescription",
+  "stateOfIncorporationDescription": "stateOfIncorporationDescription", "country": "stateOfIncorporationDescription", "страна": "stateOfIncorporationDescription",
   
   //Контакты
   
