@@ -136,12 +136,8 @@ function normalizeQuarter(value) {
 function resolveAlias(alias, context = 'metric') {
   if (!alias) return null;
   
-  let normalized;
-  if (context === 'metric') {
-    normalized = alias.toString().trim().toLowerCase().replace(/[\s_-]/g, '');
-  } else {
-    normalized = alias.toString().trim().toLowerCase();
-  }
+  // Для обоих контекстов удаляем пробелы, дефисы и подчеркивания
+  const normalized = alias.toString().trim().toLowerCase().replace(/[\s_-]/g, '');
   
   if (context === 'metric' && catalogs.METRICS_CATALOG[normalized]) {
     return normalized;
