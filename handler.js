@@ -247,7 +247,11 @@ async function processInfo(req, res) {
     }
     
     common.log(`[processInfo] Вызов common.getSubmissionsData(${cik})`);
-    const subData = await common.getSubmissionsData(cik);
+    let subData = await common.getInfoFromIndex(cik);
+    if (!subData) {
+      // fallback к SEC API
+      subData = await common.getSubmissionsData(cik);
+    }
     if (!subData) {
       common.log(`[processInfo] ОШИБКА: Не удалось получить submissions`);
       return res.json(formatResponse(false, null, isBatch, 'Ошибка получения данных из SEC'));
