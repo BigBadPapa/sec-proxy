@@ -967,7 +967,7 @@ const ALIASES = {
   "qlastreport": "qlastreport",
   "qlastreporthtml": "qlastreporthtml",
   "qlastreportxbrl": "qlastreportxbrl",
-  
+}
 // ============ 3. ДОПОЛНИТЕЛЬНЫЕ СПРАВОЧНИКИ ==========
 
 // Типы отчетов SEC
