@@ -181,7 +181,11 @@ async function getInfo(req, res) {
     
     // ============ ОБЫЧНАЯ ОБРАБОТКА INFO ============
     
-    const subData = await common.getSubmissionsData(cik);
+    let subData = await common.getInfoFromIndex(cik);
+    if (!subData) {
+    // fallback к SEC API
+      subData = await common.getSubmissionsData(cik);
+    }
     if (!subData) return res.status(500).json({ error: 'Ошибка получения данных' });
     
     // Вспомогательные функции
