@@ -123,7 +123,7 @@ async function processInfo(req, res) {
       return res.json(formatResponse(false, null, false, 'Тикер не указан'));
     }
     
-    // Определяем, что за поле запрошено (если строка)
+    // ============ ОПРЕДЕЛЕНИЕ СПЕЦИАЛЬНЫХ ПОЛЕЙ ============
     let fieldStr = null;
     let isSpecialField = false;
     let specialFieldType = null;
@@ -133,7 +133,6 @@ async function processInfo(req, res) {
       fieldStr = rawField.trim().toLowerCase();
       common.log(`[processInfo] fieldStr=${fieldStr}`);
       
-      // Проверка на специальные поля для отчетов
       const specialFields = {
         'lastreport': { type: 'all', format: 'text' },
         'lastreporthtml': { type: 'all', format: 'html' },
@@ -154,7 +153,7 @@ async function processInfo(req, res) {
       }
     }
     
-    // ============ ОБРАБОТКА СПЕЦИАЛЬНЫХ ПОЛЕЙ (lastreport и т.д.) ============
+    // ============ ОБРАБОТКА СПЕЦИАЛЬНЫХ ПОЛЕЙ ============
     if (isSpecialField) {
       common.log(`[processInfo] Начало обработки специального поля: fieldStr=${fieldStr}`);
       
@@ -182,7 +181,7 @@ async function processInfo(req, res) {
       return res.json(formatResponse(true, result, false));
     }
     
-    // ============ ОБЫЧНЫЕ ПОЛЯ (массив или строка) ============
+    // ============ ОБЫЧНЫЕ ПОЛЯ ============
     common.log(`[processInfo] Обработка обычных полей`);
     
     let fieldsArray = [];
@@ -255,6 +254,18 @@ async function processInfo(req, res) {
     }
     common.log(`[processInfo] subData получен`);
     
+    // Вспомогательные функции для преобразования массивов в строки
+    const arrayToString = (arr) => {
+      if (!arr) return null;
+      if (Array.isArray(arr) && arr.length > 0) return arr.join(', ');
+      return null;
+    };
+    
+    const formerNamesToString = (formerNames) => {
+      if (!formerNames || formerNames.length === 0) return null;
+      return formerNames.map(fn => fn.name).join(', ');
+    };
+    
     const results = [];
     for (const resolved of resolvedFields) {
       common.log(`[processInfo] Извлечение значения для поля: ${resolved}`);
@@ -269,6 +280,16 @@ async function processInfo(req, res) {
         value = value[key];
         common.log(`[processInfo]   -> ключ ${key} = ${typeof value === 'object' ? JSON.stringify(value).substring(0, 50) : value}`);
       }
+      
+      // ============ ПРЕОБРАЗОВАНИЕ МАССИВОВ В СТРОКИ ДЛЯ GAS ============
+      if (Array.isArray(value) && (resolved === 'tickers' || resolved === 'exchanges')) {
+        value = arrayToString(value);
+        common.log(`[processInfo]   -> преобразован массив ${resolved} в строку: ${value}`);
+      } else if (Array.isArray(value) && resolved === 'formerNames') {
+        value = formerNamesToString(value);
+        common.log(`[processInfo]   -> преобразован formerNames в строку: ${value}`);
+      }
+      
       results.push(value !== null && value !== undefined ? value : null);
     }
     
