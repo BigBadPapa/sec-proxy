@@ -493,6 +493,36 @@ async function getLastReport(cik, type = 'all') {
   return null;
 }
 
+// ============ ЗАГРУЗКА ЛОКАЛЬНОГО ИНДЕКСА SUBMISSIONS ==========
+
+const fs = require('fs').promises;
+const path = require('path');
+
+let submissionsIndex = null;
+let submissionsIndexLoaded = false;
+
+async function loadSubmissionsIndex() {
+  if (submissionsIndexLoaded) return submissionsIndex;
+  
+  try {
+    const indexPath = path.join(__dirname, 'data', 'submissions.json');
+    const data = await fs.readFile(indexPath, 'utf8');
+    submissionsIndex = JSON.parse(data);
+    submissionsIndexLoaded = true;
+    log(`submissions-index загружен: ${Object.keys(submissionsIndex).length} компаний`);
+    return submissionsIndex;
+  } catch (error) {
+    log(`Ошибка загрузки submissions-index: ${error.message}`);
+    return null;
+  }
+}
+
+async function getInfoFromIndex(cik) {
+  const index = await loadSubmissionsIndex();
+  if (!index) return null;
+  return index[cik] || null;
+}
+
 // ============ 8. ЭКСПОРТ ==========
 
 module.exports = {
@@ -518,5 +548,7 @@ module.exports = {
   getSubmissionsData,
   buildDocumentUrl,
   formatReportString,
-  getLastReport
+  getLastReport,
+  loadSubmissionsIndex,
+  getInfoFromIndex
 };
