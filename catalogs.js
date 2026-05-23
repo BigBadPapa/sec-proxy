@@ -880,7 +880,7 @@ const ALIASES = {
   "cik": "cik", "сик": "cik",
   "name": "name", "имя": "name", "название": "name", "наименование": "name",
   "ein": "ein", "инн": "ein",
-  "entityType": "entityType", "тип": "entityType", "типрегистрации": "entityType", "форма": "entityType", "формарегистрации": "entityType", "категория": "entityType", "категориярегистрации": "entityType", "вид": "entityType",
+  "entityType": "entityType", "тип": "entityType", "типрегистрации": "entityType", "форма": "entityType", "формарегистрации": "entityType", "категориярегистрации": "entityType", "вид": "entityType",
   "description": "description", "описание": "description",
   "ownerOrg": "ownerOrg", "сектор": "ownerOrg",
   "lei": "lei",
@@ -891,7 +891,7 @@ const ALIASES = {
   "sic": "sic", "кодотрасли": "sic", "кодиндустрии": "sic",
   "sicDescription": "sicDescription", "отрасль": "sicDescription", "идустрия": "sicDescription", "описаниеотрасли": "sicDescription", "описаниеиндустрии": "sicDescription",
   "category": "category", "категория": "category",
-  "fiscalYearEnd": "fiscalYearEnd", "конецгода": "fiscalYearEnd", "конефин.цгода": "fiscalYearEnd", "конецфинансовогогода": "fiscalYearEnd", "фингод": "fiscalYearEnd",
+  "fiscalYearEnd": "fiscalYearEnd", "конецгода": "fiscalYearEnd", "конецфингода": "fiscalYearEnd", "конецфинансовогогода": "fiscalYearEnd", "фингод": "fiscalYearEnd",
   "stateOfIncorporation": "stateOfIncorporation", "штат": "stateOfIncorporation", "штатрегистрации": "stateOfIncorporation",
   "stateOfIncorporationDescription": "stateOfIncorporationDescription", "штатполный": "stateOfIncorporationDescription",
   
@@ -899,7 +899,7 @@ const ALIASES = {
   
   "phone": "phone", "телефон": "phone",
   "website": "website", "сайт": "website", "вебсайт": "website",
-  "investorWebsite": "investorWebsite", "сайт инвесторов": "investorWebsite", "сайт инвестора": "investorWebsite",  "инвесторский сайт": "investorWebsite",  "сайт для инвесторов": "investorWebsite", "сайт для инвестора": "investorWebsite", 
+  "investorWebsite": "investorWebsite", "сайтинвесторов": "investorWebsite", "сайтинвестора": "investorWebsite",  "инвесторскийсайт": "investorWebsite",  "сайтдляинвесторов": "investorWebsite", "сайтдляинвестора": "investorWebsite", 
   
   //Рыночные
   
