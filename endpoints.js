@@ -28,7 +28,7 @@ router.get('/company-tickers', api.getCompanyTickers);
 router.get('/company-tickers-mf', api.getCompanyTickersMF);
 router.get('/company-tickers-exchange', api.getCompanyTickersExchange);
 
-// ============ СПИСОК ТИКЕРОВ ДЛЯ GAS (с фильтрацией и логами) ==========
+// ============ СПИСОК ТИКЕРОВ ДЛЯ GAS (преобразование объекта в массив) ==========
 router.get('/api/tickers-list', (req, res) => {
   console.log('[tickers-list] Начало запроса');
   
@@ -37,57 +37,34 @@ router.get('/api/tickers-list', (req, res) => {
     const indexPath = path.join(__dirname, 'data', 'submissions.json');
     console.log('[tickers-list] Путь к файлу: ' + indexPath);
     
-    // Проверяем, существует ли файл
     if (!fs.existsSync(indexPath)) {
-      console.log('[tickers-list] Файл НЕ НАЙДЕН: ' + indexPath);
+      console.log('[tickers-list] Файл НЕ НАЙДЕН');
       return res.status(404).json({ error: 'Файл submissions.json не найден' });
     }
-    console.log('[tickers-list] Файл найден');
     
-    // Читаем файл
     const fileContent = fs.readFileSync(indexPath, 'utf8');
     console.log('[tickers-list] Размер файла: ' + fileContent.length + ' байт');
     
-    // Парсим JSON
-    const data = JSON.parse(fileContent);
-    console.log('[tickers-list] Количество CIK в файле: ' + Object.keys(data).length);
+    const submissions = JSON.parse(fileContent);
+    console.log('[tickers-list] Количество CIK: ' + Object.keys(submissions).length);
     
+    // Преобразование объекта в массив для диалога
     const tickersList = [];
-    let processedCompanies = 0;
-    let skippedCompanies = 0;
-    
-    for (const cik in data) {
-      const company = data[cik];
-      const tickersStr = company.tickers;
-      const exchangesStr = company.exchanges;
-      const stateDesc = company.stateOfIncorporationDescription || '';
-      const ownerOrg = company.ownerOrg || '';
-      const sicDesc = company.sicDescription || '';
+    for (const cik in submissions) {
+      const company = submissions[cik];
+      if (!company.tickers) continue;
       
-      if (!tickersStr) {
-        skippedCompanies++;
-        continue;
-      }
-      
-      const tickers = tickersStr.split(', ');
-      const exchanges = exchangesStr ? exchangesStr.split(', ') : [];
-      
-      for (let i = 0; i < tickers.length; i++) {
-        tickersList.push({
-          ticker: tickers[i],
-          exchange: exchanges[i] || (exchanges[0] || 'OTC'),
-          stateOrCountry: stateDesc,
-          ownerOrg: ownerOrg,
-          sicDescription: sicDesc
-        });
-      }
-      processedCompanies++;
+      tickersList.push({
+        ticker: company.tickers,
+        name: company.name,
+        exchange: company.exchanges,
+        stateOrCountry: company.stateOfIncorporationDescription,
+        ownerOrg: company.ownerOrg,
+        sicDescription: company.sicDescription
+      });
     }
     
-    console.log('[tickers-list] Обработано компаний: ' + processedCompanies);
-    console.log('[tickers-list] Пропущено (нет тикеров): ' + skippedCompanies);
-    console.log('[tickers-list] Всего строк в ответе: ' + tickersList.length);
-    
+    console.log('[tickers-list] Преобразовано записей: ' + tickersList.length);
     res.json(tickersList);
     
   } catch (err) {
