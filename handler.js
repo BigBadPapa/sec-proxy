@@ -249,7 +249,6 @@ async function processInfo(req, res) {
     common.log(`[processInfo] Вызов common.getSubmissionsData(${cik})`);
     let subData = await common.getInfoFromIndex(cik);
     if (!subData) {
-      // fallback к SEC API
       subData = await common.getSubmissionsData(cik);
     }
     if (!subData) {
@@ -257,18 +256,6 @@ async function processInfo(req, res) {
       return res.json(formatResponse(false, null, isBatch, 'Ошибка получения данных из SEC'));
     }
     common.log(`[processInfo] subData получен`);
-    
-    // Вспомогательные функции для преобразования массивов в строки
-    const arrayToString = (arr) => {
-      if (!arr) return null;
-      if (Array.isArray(arr) && arr.length > 0) return arr.join(', ');
-      return null;
-    };
-    
-    const formerNamesToString = (formerNames) => {
-      if (!formerNames || formerNames.length === 0) return null;
-      return formerNames.map(fn => fn.name).join(', ');
-    };
     
     const results = [];
     for (const resolved of resolvedFields) {
@@ -285,16 +272,8 @@ async function processInfo(req, res) {
         common.log(`[processInfo]   -> ключ ${key} = ${typeof value === 'object' ? JSON.stringify(value).substring(0, 50) : value}`);
       }
       
-      // ============ ПРЕОБРАЗОВАНИЕ МАССИВОВ В СТРОКИ ДЛЯ GAS ============
-      if (Array.isArray(value) && (resolved === 'tickers' || resolved === 'exchanges')) {
-        value = arrayToString(value);
-        common.log(`[processInfo]   -> преобразован массив ${resolved} в строку: ${value}`);
-      } else if (Array.isArray(value) && resolved === 'formerNames') {
-        value = formerNamesToString(value);
-        common.log(`[processInfo]   -> преобразован formerNames в строку: ${value}`);
-      }
-      
-      results.push(value !== null && value !== undefined ? value : null);
+      value = common.normalizeInfoValue(value, resolved);
+      results.push(value);
     }
     
     common.log(`[processInfo] results: [${results.map(r => r === null ? 'null' : r).join(', ')}]`);
@@ -313,6 +292,7 @@ async function processInfo(req, res) {
     return res.json(formatResponse(false, null, false, error.message));
   }
 }
+
 module.exports = {
   processEdgar,
   processInfo
