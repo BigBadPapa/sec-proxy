@@ -1,6 +1,7 @@
 // ============ ENDPOINTS.JS - ВСЕ ЭНДПОИНТЫ SEC ==========
 
 const express = require('express');
+const path = require('path');
 const router = express.Router();
 
 const handler = require('./handler');
@@ -27,6 +28,11 @@ router.get('/company-tickers', api.getCompanyTickers);
 router.get('/company-tickers-mf', api.getCompanyTickersMF);
 router.get('/company-tickers-exchange', api.getCompanyTickersExchange);
 
+// ============ СТАТИЧЕСКИЕ ФАЙЛЫ ДЛЯ GAS ============
+router.get('/data/submissions.json', (req, res) => {
+  res.sendFile(path.join(__dirname, 'data', 'submissions.json'));
+});
+
 // ============ ВСПОМОГАТЕЛЬНЫЕ ============
 router.get('/version', (req, res) => {
   res.json({ version: '1.0.0', name: 'SEC Proxy' });
@@ -37,7 +43,7 @@ router.get('/ping', (req, res) => {
   res.json({ status: 'alive', timestamp: new Date().toISOString() });
 });
 
-// ============ ЗАГЛУШКИ ДЛЯ БУДУЩИХ ЭНДПОИНТОВ ==========
+// ============ ЗАГЛУШКИ ДЛЯ БУДУЩИХ ЭНДПОИНТОВ ============
 router.get('/actions/reports/:ticker', (req, res) => {
   res.status(501).json({ error: 'Not implemented yet', endpoint: req.path });
 });
