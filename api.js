@@ -126,19 +126,9 @@ async function validateMetric(req, res) {
 
 // ============ 2. INFO (СТАТИЧЕСКАЯ ИНФОРМАЦИЯ) ==========
 
-// Формирует строку с гиперссылками для отчета
 function formatReportLink(report, cik) {
   if (!report) return 'Н/Д';
-  
-  const htmlUrl = `https://www.sec.gov/Archives/edgar/data/${parseInt(cik)}/${report.accessionNumber}/${report.primaryDocument}`;
-  const xbrlUrl = `https://www.sec.gov/ix?doc=/Archives/edgar/data/${parseInt(cik)}/${report.accessionNumber}/${report.primaryDocument}`;
-  
-  const fpFormatted = report.fp; // Q1, Q2, Q3, Q4
-  const fyFormatted = report.fy;
-  
-  // Формируем строку с двумя гиперссылками: Q2 2026
-  // В GAS это будет интерпретировано как =HYPERLINK()&" "&HYPERLINK()
-  return `${fpFormatted} ${fyFormatted}`;
+  return `${report.fp} ${report.fy}`;
 }
 
 async function getInfo(req, res) {
@@ -183,22 +173,9 @@ async function getInfo(req, res) {
     
     let subData = await common.getInfoFromIndex(cik);
     if (!subData) {
-    // fallback к SEC API
       subData = await common.getSubmissionsData(cik);
     }
     if (!subData) return res.status(500).json({ error: 'Ошибка получения данных' });
-    
-    // Вспомогательные функции
-    const arrayToString = (arr) => {
-      if (!arr) return null;
-      if (Array.isArray(arr) && arr.length > 0) return arr.join(', ');
-      return null;
-    };
-    
-    const formerNamesToString = (formerNames) => {
-      if (!formerNames || formerNames.length === 0) return null;
-      return formerNames.map(fn => fn.name).join(', ');
-    };
     
     // BATCH РЕЖИМ: несколько полей
     if (fieldsRaw) {
@@ -214,14 +191,8 @@ async function getInfo(req, res) {
           value = value[key];
         }
         
-        // Преобразуем массивы в строки
-        if (Array.isArray(value) && (resolvedField === 'tickers' || resolvedField === 'exchanges')) {
-          result[f] = arrayToString(value);
-        } else if (Array.isArray(value) && resolvedField === 'formerNames') {
-          result[f] = formerNamesToString(value);
-        } else {
-          result[f] = (value !== null && value !== undefined) ? value : null;
-        }
+        value = common.normalizeInfoValue(value, resolvedField);
+        result[f] = value;
       }
       
       return res.json(result);
@@ -240,19 +211,12 @@ async function getInfo(req, res) {
         value = value[key];
       }
       
-      // Преобразуем массивы в строки
-      if (Array.isArray(value) && (resolvedField === 'tickers' || resolvedField === 'exchanges')) {
-        value = arrayToString(value);
-      } else if (Array.isArray(value) && resolvedField === 'formerNames') {
-        value = formerNamesToString(value);
-      }
-      
-      return res.json({ field: resolvedField, value: (value !== null && value !== undefined) ? value : null });
+      value = common.normalizeInfoValue(value, resolvedField);
+      return res.json({ field: resolvedField, value: value });
     }
     
     // ВСЕ ПОЛЯ (полная информация)
     res.json({
-      // Основные
       cik: subData.cik || null,
       name: subData.entityName || null,
       ein: subData.ein || null,
@@ -261,34 +225,22 @@ async function getInfo(req, res) {
       ownerOrg: subData.ownerOrg || null,
       lei: subData.lei || null,
       flags: subData.flags || null,
-      
-      // Коды и категории
       sic: subData.sic || null,
       sicDescription: subData.sicDescription || null,
       category: subData.category || null,
       fiscalYearEnd: subData.fiscalYearEnd || null,
       stateOfIncorporation: subData.stateOfIncorporation || null,
       stateOfIncorporationDescription: subData.stateOfIncorporationDescription || null,
-      
-      // Контакты
       phone: subData.phone || null,
       website: subData.website || null,
       investorWebsite: subData.investorWebsite || null,
-      
-      // Рыночные (преобразованы в строку)
-      tickers: arrayToString(subData.tickers),
-      exchanges: arrayToString(subData.exchanges),
-      
-      // Инсайдеры
+      tickers: common.normalizeInfoValue(subData.tickers, 'tickers'),
+      exchanges: common.normalizeInfoValue(subData.exchanges, 'exchanges'),
       insiderTransactionForOwnerExists: subData.insiderTransactionForOwnerExists !== undefined ? subData.insiderTransactionForOwnerExists : null,
       insiderTransactionForIssuerExists: subData.insiderTransactionForIssuerExists !== undefined ? subData.insiderTransactionForIssuerExists : null,
-      
-      // Адреса (объекты)
       businessAddress: subData.addresses?.business || null,
       mailingAddress: subData.addresses?.mailing || null,
-      
-      // История (преобразована в строку)
-      formerNames: formerNamesToString(subData.formerNames),
+      formerNames: common.normalizeInfoValue(subData.formerNames, 'formerNames'),
     });
     
   } catch (error) {
@@ -484,11 +436,9 @@ async function getFrames(req, res) {
 // ============ 3. ЭКСПОРТ ==========
 
 module.exports = {
-  // Metrics
   getMetric,
   getCatalog,
   validateMetric,
-  // Info
   getInfo,
   getSubmissions,
   getCompanyFacts,
