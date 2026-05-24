@@ -32,8 +32,8 @@ router.get('/company-tickers-exchange', api.getCompanyTickersExchange);
 router.get('/api/tickers-list', (req, res) => {
   try {
     const fs = require('fs');
-    const submissionsPath = path.join(__dirname, 'data', 'submissions.json');
-    const data = JSON.parse(fs.readFileSync(submissionsPath, 'utf8'));
+    const indexPath = path.join(__dirname, 'data', 'submissions.json');
+    const data = JSON.parse(fs.readFileSync(indexPath, 'utf8'));
     
     const tickersList = [];
     for (const cik in data) {
