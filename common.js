@@ -9,7 +9,7 @@ const USER_AGENT = 'GoogleSheetsSEC contact@example.com';
 const SEC_BASE = 'https://www.sec.gov';
 const DATA_BASE = 'https://data.sec.gov';
 
-// ============ 2. БАЗОВЫЕ УТИЛИТЫ (без изменений) ==========
+// ============ 2. БАЗОВЫЕ УТИЛИТЫ ==========
 
 function log(message, data = null) {
   const timestamp = new Date().toISOString();
@@ -100,7 +100,7 @@ function applyScale(value, scale) {
   }
 }
 
-// ============ 3. НОРМАЛИЗАЦИЯ (без изменений) ==========
+// ============ 3. НОРМАЛИЗАЦИЯ ==========
 
 function normalizeTicker(ticker) {
   if (!ticker) return null;
@@ -136,7 +136,6 @@ function normalizeQuarter(value) {
 function resolveAlias(alias, context = 'metric') {
   if (!alias) return null;
   
-  // Для обоих контекстов удаляем пробелы, дефисы и подчеркивания
   const normalized = alias.toString().trim().toLowerCase().replace(/[\s_-]/g, '');
   
   if (context === 'metric' && catalogs.METRICS_CATALOG[normalized]) {
@@ -150,7 +149,31 @@ function resolveAlias(alias, context = 'metric') {
   return null;
 }
 
-// ============ 5. HTTP С РЕТРАЯМИ ==========
+// ============ 5. НОРМАЛИЗАЦИЯ ЗНАЧЕНИЙ ДЛЯ INFO ==========
+
+function normalizeInfoValue(value, fieldName) {
+  if (value === null || value === undefined) return null;
+  
+  if (typeof value === 'string') return value;
+  
+  if (Array.isArray(value)) {
+    if (fieldName === 'tickers' || fieldName === 'exchanges') {
+      return value.join(', ');
+    }
+    if (fieldName === 'formerNames') {
+      return value.map(fn => fn.name || fn).join(', ');
+    }
+    return value.join(', ');
+  }
+  
+  if (typeof value === 'object') {
+    return JSON.stringify(value);
+  }
+  
+  return String(value);
+}
+
+// ============ 6. HTTP С РЕТРАЯМИ ==========
 
 async function fetchWithRetry(url, options, maxRetries = 3) {
   for (let i = 0; i < maxRetries; i++) {
@@ -176,7 +199,7 @@ async function fetchWithRetry(url, options, maxRetries = 3) {
   }
 }
 
-// ============ 6. ФУНКЦИИ ДЛЯ SEC API ==========
+// ============ 7. ФУНКЦИИ ДЛЯ SEC API ==========
 
 async function getCIK(ticker) {
   const normalizedTicker = normalizeTicker(ticker);
@@ -275,7 +298,7 @@ async function getSubmissionsData(cik) {
   return data;
 }
 
-// ============ 7. НОВЫЕ ФУНКЦИИ ДЛЯ ПОИСКА ОТЧЕТОВ ==========
+// ============ 8. ФУНКЦИИ ДЛЯ ПОИСКА ОТЧЕТОВ ==========
 
 function buildDocumentUrl(cik, accessionNumberRaw, primaryDocument, format) {
   const cikNumber = parseInt(cik, 10);
@@ -296,6 +319,7 @@ function buildDocumentUrl(cik, accessionNumberRaw, primaryDocument, format) {
   log(`[buildDocumentUrl] Неизвестный format: ${format}`);
   return null;
 }
+
 function formatReportString(report, format) {
   log(`[formatReportString] Начало: report=${report ? 'есть' : 'null'}, format=${format}`);
   
@@ -310,13 +334,11 @@ function formatReportString(report, format) {
     const year = report.fy;
     const fp = report.fp;
     
-    // Годовой отчет
     if (fp === 'FY' || report.form === '10-K' || report.form === '20-F' || report.form === '40-F') {
       const result = `FY ${year}`;
       log(`[formatReportString] text (годовой): ${result}`);
       return result;
     }
-    // Квартальный отчет
     const quarterNum = fp.replace('Q', '');
     const result = `Q${quarterNum} ${year}`;
     log(`[formatReportString] text (квартальный): ${result}`);
@@ -344,7 +366,6 @@ async function getLastReport(cik, type = 'all') {
   
   log(`[getLastReport] НАЧАЛО: CIK=${cik}, type=${type}`);
   
-  // Проверка кэша
   if (cache.CACHE_CONFIG.metrics.enabled) {
     const cached = cache.getFromCache(cache.metricsCache, cacheKey, cache.CACHE_CONFIG.metrics.ttl);
     if (cached !== null) {
@@ -370,7 +391,6 @@ async function getLastReport(cik, type = 'all') {
   }
   log(`[getLastReport] companyfacts загружены`);
 
-  // Поиск тега Assets в XBRL
   log(`[getLastReport] Поиск тега Assets в XBRL...`);
   let assetsData = null;
   const taxonomies = ['us-gaap', 'ifrs-full', 'srt'];
@@ -397,7 +417,6 @@ async function getLastReport(cik, type = 'all') {
     return null;
   }
 
-  // Сортировка Assets по дате filed (от новых к старым)
   const sortedAssets = assetsValues.sort((a, b) => {
     const filedA = a.filed ? new Date(a.filed).getTime() : 0;
     const filedB = b.filed ? new Date(b.filed).getTime() : 0;
@@ -405,7 +424,6 @@ async function getLastReport(cik, type = 'all') {
   });
   log(`[getLastReport] Assets отсортированы. Первые 3 даты filed: ${sortedAssets.slice(0, 3).map(a => a.filed).join(', ')}`);
 
-  // Определение допустимых форм
   let allowedForms = [];
   if (type === 'annual') {
     allowedForms = ['10-K', '20-F', '40-F'];
@@ -428,7 +446,6 @@ async function getLastReport(cik, type = 'all') {
   log(`[getLastReport] Первые 5 форм: ${forms.slice(0, 5).join(', ')}`);
   log(`[getLastReport] Первые 5 дат filing: ${filingDates.slice(0, 5).join(', ')}`);
 
-  // Поиск отчета
   for (let i = 0; i < forms.length; i++) {
     const form = forms[i];
     if (!allowedForms.includes(form)) continue;
@@ -444,7 +461,6 @@ async function getLastReport(cik, type = 'all') {
       continue;
     }
 
-    // Поиск соответствующего Assets по дате filed
     let matchingAsset = null;
     for (const asset of sortedAssets) {
       if (asset.filed === filingDate) {
@@ -474,7 +490,6 @@ async function getLastReport(cik, type = 'all') {
           reportDate: matchingAsset.end || null
         };
         
-        // Сохранение в кэш
         if (cache.CACHE_CONFIG.metrics.enabled && result) {
           cache.setToCache(cache.metricsCache, cacheKey, result, cache.CACHE_CONFIG.metrics.ttl, cache.CACHE_CONFIG.metrics.maxSize);
           log(`[getLastReport] Результат сохранен в кэш: ${cacheKey}`);
@@ -493,7 +508,7 @@ async function getLastReport(cik, type = 'all') {
   return null;
 }
 
-// ============ ЗАГРУЗКА ЛОКАЛЬНОГО ИНДЕКСА SUBMISSIONS ==========
+// ============ 9. ЗАГРУЗКА ЛОКАЛЬНОГО ИНДЕКСА SUBMISSIONS ==========
 
 const fs = require('fs').promises;
 const path = require('path');
@@ -523,7 +538,7 @@ async function getInfoFromIndex(cik) {
   return index[cik] || null;
 }
 
-// ============ 8. ЭКСПОРТ ==========
+// ============ 10. ЭКСПОРТ ==========
 
 module.exports = {
   USER_AGENT,
@@ -542,6 +557,7 @@ module.exports = {
   normalizeScale,
   normalizeQuarter,
   resolveAlias,
+  normalizeInfoValue,
   fetchWithRetry,
   getCIK,
   getCompanyFacts,
