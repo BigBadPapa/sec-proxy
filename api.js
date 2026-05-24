@@ -171,10 +171,7 @@ async function getInfo(req, res) {
     
     // ============ ОБЫЧНАЯ ОБРАБОТКА INFO ============
     
-    let subData = await common.getInfoFromIndex(cik);
-    if (!subData) {
-      subData = await common.getSubmissionsData(cik);
-    }
+    const subData = await common.getSubmissionsData(cik);
     if (!subData) return res.status(500).json({ error: 'Ошибка получения данных' });
     
     // BATCH РЕЖИМ: несколько полей
