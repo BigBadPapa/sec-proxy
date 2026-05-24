@@ -28,7 +28,45 @@ router.get('/company-tickers', api.getCompanyTickers);
 router.get('/company-tickers-mf', api.getCompanyTickersMF);
 router.get('/company-tickers-exchange', api.getCompanyTickersExchange);
 
-// ============ СТАТИЧЕСКИЕ ФАЙЛЫ ДЛЯ GAS ============
+// ============ СПИСОК ТИКЕРОВ ДЛЯ GAS (с фильтрацией) ==========
+router.get('/api/tickers-list', (req, res) => {
+  try {
+    const fs = require('fs');
+    const submissionsPath = path.join(__dirname, 'data', 'submissions.json');
+    const data = JSON.parse(fs.readFileSync(submissionsPath, 'utf8'));
+    
+    const tickersList = [];
+    for (const cik in data) {
+      const company = data[cik];
+      const tickersStr = company.tickers;
+      const exchangesStr = company.exchanges;
+      const stateDesc = company.stateOfIncorporationDescription || '';
+      const ownerOrg = company.ownerOrg || '';
+      const sicDesc = company.sicDescription || '';
+      
+      if (!tickersStr) continue;
+      
+      const tickers = tickersStr.split(', ');
+      const exchanges = exchangesStr ? exchangesStr.split(', ') : [];
+      
+      for (let i = 0; i < tickers.length; i++) {
+        tickersList.push({
+          ticker: tickers[i],
+          exchange: exchanges[i] || (exchanges[0] || 'OTC'),
+          stateOrCountry: stateDesc,
+          ownerOrg: ownerOrg,
+          sicDescription: sicDesc
+        });
+      }
+    }
+    
+    res.json(tickersList);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ============ СТАТИЧЕСКИЕ ФАЙЛЫ ==========
 router.get('/data/submissions.json', (req, res) => {
   res.sendFile(path.join(__dirname, 'data', 'submissions.json'));
 });
