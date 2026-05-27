@@ -34,7 +34,7 @@ router.get('/api/tickers-list', (req, res) => {
   
   try {
     const fs = require('fs');
-    const indexPath = path.join(__dirname, 'data', 'ions.json');
+    const indexPath = path.join(__dirname, 'data', 'submissions.json');
     console.log('[tickers-list] Путь к файлу: ' + indexPath);
     
     if (!fs.existsSync(indexPath)) {
