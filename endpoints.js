@@ -34,12 +34,12 @@ router.get('/api/tickers-list', (req, res) => {
   
   try {
     const fs = require('fs');
-    const indexPath = path.join(__dirname, 'data', 'submissions.json');
+    const indexPath = path.join(__dirname, 'data', 'ions.json');
     console.log('[tickers-list] Путь к файлу: ' + indexPath);
     
     if (!fs.existsSync(indexPath)) {
       console.log('[tickers-list] Файл НЕ НАЙДЕН');
-      return res.status(404).json({ error: 'Файл submissions.json не найден' });
+      return res.status(404).json({ error: 'Файл ions.json не найден' });
     }
     
     const fileContent = fs.readFileSync(indexPath, 'utf8');
@@ -77,6 +77,9 @@ router.get('/api/tickers-list', (req, res) => {
 // ============ СТАТИЧЕСКИЕ ФАЙЛЫ ==========
 router.get('/data/submissions.json', (req, res) => {
   res.sendFile(path.join(__dirname, 'data', 'submissions.json'));
+});
+router.get('/data/submissions2.json', (req, res) => {
+  res.sendFile(path.join(__dirname, 'data', 'submissions2.json'));
 });
 
 // ============ ВСПОМОГАТЕЛЬНЫЕ ============
