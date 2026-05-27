@@ -55,6 +55,7 @@ router.get('/api/tickers-list', (req, res) => {
       if (!company.tickers) continue;
       
       tickersList.push({
+        cik: cik,
         ticker: company.tickers,
         name: company.name,
         exchange: company.exchanges,
