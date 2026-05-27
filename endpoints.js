@@ -1,4 +1,4 @@
-// ============ ENDPOINTS.JS - ВСЕ ЭНДПОИНТЫ SEC ==========
+// ============ ENDPOINTS.JS - ВСЕ ЭНДПОИНТЫ SEC ===========
 
 const express = require('express');
 const path = require('path');
