@@ -266,6 +266,65 @@ function getValueFromTag(tagData, metricName, year, quarterParam, isBalanceMetri
   return result;
 }
 
+function getMetricValueInternal(factsData, metric, year, quarterParam, scale, ticker) {
+  const catalog = catalogs.METRICS_CATALOG[metric];
+  if (!catalog) {
+    common.log(`getMetricValueInternal: метрика ${metric} не найдена в каталоге`);
+    return null;
+  }
+  
+  if (quarterParam === '4q') {
+    quarterParam = undefined;
+  }
+  
+  const isBalanceMetric = catalog.ttm === 'last';
+  
+  common.log(`getMetricValueInternal: ticker=${ticker}, metric=${metric}, year=${year}, quarterParam=${quarterParam}, isBalance=${isBalanceMetric}`);
+  
+  if (quarterParam === 'q4') {
+    const annual = getMetricValueInternal(factsData, metric, year, '4q', null, ticker);
+    const ytdQ3 = getMetricValueInternal(factsData, metric, year, '3q', null, ticker);
+    const result = (annual !== null && ytdQ3 !== null) ? annual - ytdQ3 : null;
+    return result !== null ? common.applyScale(result, scale) : null;
+  }
+  
+  let result = searchValueInAllTags(factsData, catalog, year, quarterParam, isBalanceMetric, ticker);
+  
+  // ИСПРАВЛЕНИЕ: compute через рекурсивный вызов getMetricValueInternal
+  if ((result === null || result === undefined) && catalog.compute && catalog.compute.length > 0) {
+    common.log(`getMetricValueInternal: прямой поиск не дал результата, пробуем compute через рекурсию`);
+    let computeResult = null;
+    let validCount = 0;
+    
+    for (const computeAlias of catalog.compute) {
+      common.log(`getMetricValueInternal: получаем значение для алиаса ${computeAlias}`);
+      const value = getMetricValueInternal(factsData, computeAlias, year, quarterParam, null, ticker);
+      if (value !== null && value !== undefined) {
+        if (catalog.operation === 'sum') {
+          if (computeResult === null) computeResult = 0;
+          computeResult += value;
+          common.log(`getMetricValueInternal: сумма = ${computeResult}`);
+        } else if (catalog.operation === 'subtract') {
+          if (computeResult === null) computeResult = value;
+          else computeResult -= value;
+          common.log(`getMetricValueInternal: вычитание = ${computeResult}`);
+        }
+        validCount++;
+      } else {
+        common.log(`getMetricValueInternal: значение для алиаса ${computeAlias} не найдено`);
+      }
+    }
+    
+    if (validCount > 0 && computeResult !== null) {
+      result = computeResult;
+      common.log(`getMetricValueInternal: compute результат = ${result}`);
+    }
+  }
+  
+  common.log(`getMetricValueInternal: итоговый результат = ${result}`);
+  return result !== null ? common.applyScale(result, scale) : null;
+}
+
 function searchValueInAllTags(factsData, catalog, year, quarterParam, isBalanceMetric, ticker) {
   const tags = catalog.tags;
   const isQuarterRequest = quarterParam !== undefined && quarterParam !== null && quarterParam !== 'annual' && quarterParam !== 'год';
@@ -317,98 +376,39 @@ function searchValueInAllTags(factsData, catalog, year, quarterParam, isBalanceM
     }
   }
   
+  // ИСПРАВЛЕНИЕ: compute через рекурсивный вызов getMetricValueInternal
   if (catalog.compute && catalog.compute.length > 0) {
-    common.log(`searchValueInAllTags: переходим к compute-тегам`);
-    let sum = null;
+    common.log(`searchValueInAllTags: переходим к compute через рекурсию`);
+    let computeResult = null;
     let validCount = 0;
     
-    for (const computeTag of catalog.compute) {
-      common.log(`searchValueInAllTags: проверяем compute-тег ${computeTag}`);
-      const computeFound = findTagData(factsData, [computeTag]);
-      if (!computeFound) {
-        common.log(`searchValueInAllTags: compute-тег ${computeTag} не найден`);
-        continue;
-      }
-      
-      const computeResult = getValueFromTag(computeFound.data, catalog.alias || Object.keys(catalogs.METRICS_CATALOG).find(k => catalogs.METRICS_CATALOG[k] === catalog), year, quarterParam, isBalanceMetric, ticker, factsData);
-      if (computeResult !== null && computeResult !== undefined) {
+    for (const computeAlias of catalog.compute) {
+      common.log(`searchValueInAllTags: получаем значение для алиаса ${computeAlias}`);
+      const value = getMetricValueInternal(factsData, computeAlias, year, quarterParam, null, ticker);
+      if (value !== null && value !== undefined) {
         if (catalog.operation === 'sum') {
-          if (sum === null) sum = 0;
-          sum += computeResult;
-          common.log(`searchValueInAllTags: добавлено ${computeResult}, сумма=${sum}`);
+          if (computeResult === null) computeResult = 0;
+          computeResult += value;
+          common.log(`searchValueInAllTags: сумма = ${computeResult}`);
         } else if (catalog.operation === 'subtract') {
-          if (sum === null) sum = computeResult;
-          else sum -= computeResult;
-          common.log(`searchValueInAllTags: вычитание, результат=${sum}`);
+          if (computeResult === null) computeResult = value;
+          else computeResult -= value;
+          common.log(`searchValueInAllTags: вычитание = ${computeResult}`);
         }
         validCount++;
+      } else {
+        common.log(`searchValueInAllTags: значение для алиаса ${computeAlias} не найдено`);
       }
     }
     
-    if (validCount > 0 && sum !== null) {
-      common.log(`searchValueInAllTags: результат compute: ${sum}`);
-      return sum;
+    if (validCount > 0 && computeResult !== null) {
+      common.log(`searchValueInAllTags: результат compute: ${computeResult}`);
+      return computeResult;
     }
   }
   
   common.log(`searchValueInAllTags: результат не найден`);
   return null;
-}
-
-function getMetricValueInternal(factsData, metric, year, quarterParam, scale, ticker) {
-  const catalog = catalogs.METRICS_CATALOG[metric];
-  if (!catalog) {
-    common.log(`getMetricValueInternal: метрика ${metric} не найдена в каталоге`);
-    return null;
-  }
-  
-  if (quarterParam === '4q') {
-    quarterParam = undefined;
-  }
-  
-  const isBalanceMetric = catalog.ttm === 'last';
-  
-  common.log(`getMetricValueInternal: ticker=${ticker}, metric=${metric}, year=${year}, quarterParam=${quarterParam}, isBalance=${isBalanceMetric}`);
-  
-  if (quarterParam === 'q4') {
-    const annual = getMetricValueInternal(factsData, metric, year, '4q', null, ticker);
-    const ytdQ3 = getMetricValueInternal(factsData, metric, year, '3q', null, ticker);
-    const result = (annual !== null && ytdQ3 !== null) ? annual - ytdQ3 : null;
-    return result !== null ? common.applyScale(result, scale) : null;
-  }
-  
-  let result = searchValueInAllTags(factsData, catalog, year, quarterParam, isBalanceMetric, ticker);
-  
-  if ((result === null || result === undefined) && catalog.compute && catalog.compute.length > 0) {
-    common.log(`getMetricValueInternal: прямой поиск не дал результата, пробуем compute`);
-    let sum = null;
-    let validCount = 0;
-    
-    for (const computeTag of catalog.compute) {
-      const computeFound = findTagData(factsData, [computeTag]);
-      if (!computeFound) continue;
-      
-      const computeResult = getValueFromTag(computeFound.data, metric, year, quarterParam, isBalanceMetric, ticker, factsData);
-      if (computeResult !== null && computeResult !== undefined) {
-        if (catalog.operation === 'sum') {
-          if (sum === null) sum = 0;
-          sum += computeResult;
-        } else if (catalog.operation === 'subtract') {
-          if (sum === null) sum = computeResult;
-          else sum -= computeResult;
-        }
-        validCount++;
-      }
-    }
-    
-    if (validCount > 0 && sum !== null) {
-      result = sum;
-      common.log(`getMetricValueInternal: compute результат = ${result}`);
-    }
-  }
-  
-  common.log(`getMetricValueInternal: итоговый результат = ${result}`);
-  return result !== null ? common.applyScale(result, scale) : null;
 }
 
 function getTTMValue(factsData, metricName, scale, ticker) {
