@@ -20,7 +20,7 @@ const METRICS_CATALOG = {
   
   // Balance Sheet - Assets
   totalassets: { tags: ['Assets'], category: 'Balance', ttm: 'last', ru: 'ВСЕГО АКТИВЫ' },
-  currentassets: { tags: ['AssetsCurrent'], category: 'Balance', ttm: 'last', ru: 'Оборотные активы' },
+  currentassets: { tags: ['AssetsCurrent', "CurrentAssets"], category: 'Balance', ttm: 'last', ru: 'Оборотные активы' },
   cashandequivalents: { tags: ['CashAndCashEquivalentsAtCarryingValue', 'CashAndCashEquivalentsAtFairValue', 'CashCashEquivalentsAndShortTermInvestments', 'CashAndDueFromBanks'], category: 'Balance', ttm: 'last', ru: 'Деньги и эквиваленты' },
   shortterminvestments: { tags: ['MarketableSecuritiesCurrent'], category: 'Balance', ttm: 'last', ru: 'Краткосрочные инвестиции' },
   accountsreceivable: { tags: ['AccountsReceivableNetCurrent', 'AccountsNotesAndLoansReceivableNetCurrent'], category: 'Balance', ttm: 'last', ru: 'Дебиторская задолженность' },
