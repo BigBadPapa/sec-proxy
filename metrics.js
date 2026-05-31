@@ -417,110 +417,166 @@ function getTTMValue(factsData, submissionsData, metricName, scale, ticker) {
   
   common.log(`getTTMValue: ticker=${ticker}, metric=${metricName}, ttmType=${ttmType}`);
   
-  let allTagValues = collectAllTagValues(factsData, catalog.tags);
-  
-  if ((!allTagValues || allTagValues.length === 0) && catalog.compute && catalog.compute.length > 0) {
-    common.log(`getTTMValue: нет прямых тегов, собираем compute-теги`);
-    const valuesMap = new Map();
-    for (const computeAlias of catalog.compute) {
-      // Получаем значения для алиаса через рекурсию
-      const aliasValues = getMetricValuesArray(factsData, computeAlias);
-      if (aliasValues && aliasValues.length > 0) {
-        for (const v of aliasValues) {
-          const key = `${v.fy || ''}|${v.fp || ''}|${v.form || ''}|${v.end || ''}|${v.start || ''}|${v.filed || ''}`;
-          if (!valuesMap.has(key)) valuesMap.set(key, v);
-        }
-      }
-    }
-    allTagValues = valuesMap.size > 0 ? Array.from(valuesMap.values()) : null;
-  }
-  
-  if (!allTagValues || allTagValues.length === 0) {
-    common.log(`getTTMValue: нет значений для метрики ${metricName}`);
+  // 1. Проверяем наличие submissionsData
+  if (!submissionsData || !submissionsData.filings || !submissionsData.filings.recent) {
+    common.log(`getTTMValue: нет данных submissions для ${ticker}`);
     return null;
   }
   
-  // ДЛЯ БАЛАНСОВЫХ МЕТРИК (ttmType === 'last') - берем последний актуальный отчет
-  if (ttmType === 'last') {
-    // Фильтруем только значения, которые привязаны к реальным отчетам с датой filing
-    const allReports = common.filterReportsWithFiled(allTagValues);
-    if (allReports.length === 0) {
-      common.log(`getTTMValue: нет отчётов с filed для метрики ${metricName}`);
-      return null;
+  const recent = submissionsData.filings.recent;
+  const forms = recent.form || [];
+  const filingDates = recent.filingDate || [];
+  
+  // 2. Собираем все отчеты и сортируем по дате (свежие первыми)
+  const allReports = [];
+  for (let i = 0; i < forms.length; i++) {
+    const form = forms[i];
+    const filingDate = filingDates[i];
+    
+    // Пропускаем формы, которые не являются 10-K, 10-Q, 20-F, 40-F, 6-K
+    if (!['10-K', '10-Q', '20-F', '40-F', '6-K'].includes(form)) continue;
+    
+    allReports.push({
+      form: form,
+      filingDate: filingDate,
+      accessionNumber: recent.accessionNumber?.[i],
+      primaryDocument: recent.primaryDocument?.[i]
+    });
+  }
+  
+  // Сортируем по дате подачи (свежие первыми)
+  allReports.sort((a, b) => {
+    const dateA = new Date(a.filingDate).getTime();
+    const dateB = new Date(b.filingDate).getTime();
+    return dateB - dateA;
+  });
+  
+  if (allReports.length === 0) {
+    common.log(`getTTMValue: нет подходящих отчетов для ${ticker}`);
+    return null;
+  }
+  
+  common.log(`getTTMValue: найдено ${allReports.length} отчетов`);
+  
+  // 3. Определяем целевые отчеты для TTM
+  let targetReports = [];
+  const latestForm = allReports[0].form;
+  
+  // Если последний отчет - годовой (10-K, 20-F, 40-F)
+  if (latestForm === '10-K' || latestForm === '20-F' || latestForm === '40-F') {
+    targetReports = [allReports[0]];
+    common.log(`getTTMValue: последний отчет годовой (${latestForm}), берем его`);
+  } 
+  // Если последний отчет - квартальный (10-Q, 6-K)
+  else if (latestForm === '10-Q' || latestForm === '6-K') {
+    let quarterlyCount = 0;
+    for (const report of allReports) {
+      if (report.form === '10-Q' || report.form === '6-K') {
+        targetReports.push(report);
+        quarterlyCount++;
+        if (quarterlyCount === 4) break;
+      }
     }
-    
-    // Сортируем по дате подачи отчета (самый свежий первым)
-    const sortedReports = common.sortByEndDesc(allReports);
-    const latestReport = sortedReports[0];
-    
-    common.log(`getTTMValue: последний отчет: form=${latestReport.form}, fy=${latestReport.fy}, fp=${latestReport.fp}, filed=${latestReport.filed}`);
-    
-    const result = latestReport.val;
-    common.log(`getTTMValue: баланс, значение из последнего отчета = ${result}`);
+    common.log(`getTTMValue: последний отчет квартальный (${latestForm}), берем ${targetReports.length} квартальных отчетов`);
+  }
+  
+  if (targetReports.length === 0) {
+    common.log(`getTTMValue: нет подходящих отчетов для TTM`);
+    return null;
+  }
+  
+  // 4. Для каждого целевого отчета получаем значение метрики
+  const values = [];
+  
+  for (const report of targetReports) {
+    // Ищем значение метрики, соответствующее этому отчету
+    const value = getMetricValueForReport(factsData, catalog, report, ticker);
+    if (value !== null && value !== undefined) {
+      values.push({
+        val: value,
+        filingDate: report.filingDate,
+        form: report.form
+      });
+      common.log(`getTTMValue: отчет ${report.form} от ${report.filingDate} -> значение = ${value}`);
+    } else {
+      common.log(`getTTMValue: отчет ${report.form} от ${report.filingDate} -> значение не найдено`);
+    }
+  }
+  
+  if (values.length === 0) {
+    common.log(`getTTMValue: нет значений метрики ${metricName} в целевых отчетах`);
+    return null;
+  }
+  
+  // 5. Для балансовых метрик (ttmType === 'last') - берем последний отчет
+  if (ttmType === 'last') {
+    const result = values[0].val;
+    common.log(`getTTMValue: балансовая метрика, значение из последнего отчета = ${result}`);
     return common.applyScale(result, scale);
   }
   
-  // ДЛЯ ОТЧЕТНЫХ МЕТРИК (ttmType === 'sum') - суммируем последние 4 квартала
-  const allReports = common.filterReportsWithFiled(allTagValues);
-  if (allReports.length === 0) {
-    common.log(`getTTMValue: нет отчётов с filed`);
-    return null;
-  }
-  
-  const sortedReports = common.sortByEndDesc(allReports);
-  const lastReport = sortedReports[0];
-  common.log(`getTTMValue: последний отчёт: form=${lastReport.form}, fy=${lastReport.fy}, fp=${lastReport.fp}, filed=${lastReport.filed}`);
-  
-  // Если последний отчет годовой - возвращаем его значение
-  if (lastReport.form === '10-K' || lastReport.form === '20-F' || lastReport.form === '40-F') {
-    const annualValue = getMetricValueInternal(factsData, metricName, lastReport.fy, undefined, null, ticker);
-    common.log(`getTTMValue: годовой отчёт, значение = ${annualValue}`);
-    return common.applyScale(annualValue, scale);
-  }
-  
-  // Определяем квартал последнего отчета
-  const quarterMatch = lastReport.fp?.match(/^Q([1-4])$/);
-  if (!quarterMatch) {
-    common.log(`getTTMValue: не удалось определить квартал из fp=${lastReport.fp}`);
-    return null;
-  }
-  
-  const lastQuarterNum = parseInt(quarterMatch[1]);
-  const lastYear = lastReport.fy;
-  
-  // Собираем последние 4 квартала (включая текущий)
-  const quarters = [];
-  for (let i = 3; i >= 0; i--) {
-    let quarterNum = lastQuarterNum - i;
-    let year = lastYear;
-    if (quarterNum <= 0) {
-      quarterNum += 4;
-      year -= 1;
-    }
-    quarters.push({ year, quarterNum });
-  }
-  common.log(`getTTMValue: собираем кварталы: ${JSON.stringify(quarters)}`);
-  
+  // 6. Для отчетных метрик (ttmType === 'sum') - суммируем
   let sum = 0;
-  let validCount = 0;
-  
-  for (const q of quarters) {
-    const quarterParam = `q${q.quarterNum}`;
-    const value = getMetricValueInternal(factsData, metricName, q.year, quarterParam, null, ticker);
-    common.log(`getTTMValue: квартал ${q.year} Q${q.quarterNum} = ${value}`);
-    if (value !== null && value !== undefined) {
-      sum += value;
-      validCount++;
+  for (const v of values) {
+    sum += v.val;
+  }
+  common.log(`getTTMValue: сумма по ${values.length} отчетам = ${sum}`);
+  return common.applyScale(sum, scale);
+}
+
+// Вспомогательная функция: получить значение метрики для конкретного отчета
+function getMetricValueForReport(factsData, catalog, report, ticker) {
+  // Пытаемся найти прямой тег
+  for (const tag of catalog.tags) {
+    const tagData = findTagData(factsData, [tag]);
+    if (!tagData) continue;
+    
+    const units = tagData.data.units;
+    const unitKey = Object.keys(units).find(k => k.includes('USD')) || 
+                    Object.keys(units).find(k => k.includes('shares')) ||
+                    Object.keys(units)[0];
+    const values = units[unitKey];
+    
+    if (!values) continue;
+    
+    // Ищем значение, у которого filingDate совпадает с датой отчета
+    const matchingValue = values.find(v => v.filed === report.filingDate);
+    if (matchingValue) {
+      common.log(`getMetricValueForReport: найден прямой тег ${tag} в отчете от ${report.filingDate}`);
+      return matchingValue.val;
     }
   }
   
-  if (validCount === 0) {
-    common.log(`getTTMValue: не найдено ни одного квартала`);
-    return null;
+  // Если прямого тега нет, пробуем compute
+  if (catalog.compute && catalog.compute.length > 0) {
+    common.log(`getMetricValueForReport: прямого тега нет, пробуем compute для отчета от ${report.filingDate}`);
+    let computeResult = null;
+    let validCount = 0;
+    
+    for (const computeAlias of catalog.compute) {
+      const subCatalog = catalogs.METRICS_CATALOG[computeAlias];
+      if (!subCatalog) continue;
+      
+      const value = getMetricValueForReport(factsData, subCatalog, report, ticker);
+      if (value !== null && value !== undefined) {
+        if (catalog.operation === 'sum') {
+          if (computeResult === null) computeResult = 0;
+          computeResult += value;
+        } else if (catalog.operation === 'subtract') {
+          if (computeResult === null) computeResult = value;
+          else computeResult -= value;
+        }
+        validCount++;
+      }
+    }
+    
+    if (validCount > 0 && computeResult !== null) {
+      common.log(`getMetricValueForReport: compute результат = ${computeResult}`);
+      return computeResult;
+    }
   }
   
-  common.log(`getTTMValue: сумма = ${sum}, validCount=${validCount}`);
-  return common.applyScale(sum, scale);
+  return null;
 }
 
 // ============ 4. ОСНОВНАЯ ПУБЛИЧНАЯ ФУНКЦИЯ ==========
