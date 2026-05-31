@@ -60,6 +60,8 @@ async function getMetric(req, res) {
       common.log(`getCompanyFacts вернул null для CIK ${cik}`);
       return res.status(500).json({ error: 'Ошибка получения данных' });
     }
+
+    const subData = await common.getSubmissionsData(cik);
     
     const results = {};
     for (const metric of resolvedMetrics) {
