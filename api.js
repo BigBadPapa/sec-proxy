@@ -63,7 +63,7 @@ async function getMetric(req, res) {
     
     const results = {};
     for (const metric of resolvedMetrics) {
-      const value = metrics.getMetricValue(factsData, metric, year, quarter, scale, ticker);
+      const value = metrics.getMetricValue(factsData, subData, metric, year, quarter, scale, ticker);
       results[metric] = value !== null ? value : null;
     }
     
