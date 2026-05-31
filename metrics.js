@@ -411,7 +411,7 @@ function searchValueInAllTags(factsData, catalog, year, quarterParam, isBalanceM
   return null;
 }
 
-function getTTMValue(factsData, metricName, scale, ticker) {
+function getTTMValue(factsData, submissionsData, metricName, scale, ticker) {
   const catalog = catalogs.METRICS_CATALOG[metricName];
   const ttmType = catalog?.ttm || 'sum';
   
@@ -525,7 +525,7 @@ function getTTMValue(factsData, metricName, scale, ticker) {
 
 // ============ 4. ОСНОВНАЯ ПУБЛИЧНАЯ ФУНКЦИЯ ==========
 
-function getMetricValue(factsData, metric, year, quarterParam, scale, ticker) {
+function getMetricValue(factsData, submissionsData, metric, year, quarterParam, scale, ticker) {
   const cacheKey = `${ticker}:${metric}:${year}:${quarterParam}`;
   
   if (cache.CACHE_CONFIG.metrics.enabled) {
@@ -540,7 +540,7 @@ function getMetricValue(factsData, metric, year, quarterParam, scale, ticker) {
   let value;
   if (year === undefined && quarterParam === undefined) {
     common.log(`getMetricValue: TTM режим`);
-    value = getTTMValue(factsData, metric, scale, ticker);
+    value = getTTMValue(factsData, submissionsData, metric, scale, ticker);
   } else {
     common.log(`getMetricValue: обычный режим (год=${year}, квартал=${quarterParam})`);
     value = getMetricValueInternal(factsData, metric, year, quarterParam, scale, ticker);
