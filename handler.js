@@ -90,10 +90,12 @@ async function processEdgar(req, res) {
     if (!factsData) {
       return res.json(formatResponse(false, null, isBatch, 'Ошибка получения данных из SEC'));
     }
+
+    const submissionsData = await common.getSubmissionsData(cik);
     
     const results = [];
     for (const metric of resolvedMetrics) {
-      const value = metrics.getMetricValue(factsData, metric, year, quarter, scale, ticker);
+      const value = metrics.getMetricValue(factsData, submissionsData, metric, year, quarter, scale, ticker);
       results.push(value !== null ? value : null);
     }
     
