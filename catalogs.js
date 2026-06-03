@@ -24,7 +24,7 @@ const METRICS_CATALOG = {
   cashandequivalents: { tags: ['CashAndCashEquivalentsAtCarryingValue', 'CashAndCashEquivalentsAtFairValue', 'CashCashEquivalentsAndShortTermInvestments', 'CashAndDueFromBanks'], category: 'Balance', ttm: 'last', ru: 'Деньги и эквиваленты' },
   shortterminvestments: { tags: ['MarketableSecuritiesCurrent'], category: 'Balance', ttm: 'last', ru: 'Краткосрочные инвестиции' },
   accountsreceivable: { tags: ['AccountsReceivableNetCurrent', 'AccountsNotesAndLoansReceivableNetCurrent'], category: 'Balance', ttm: 'last', ru: 'Дебиторская задолженность' },
-  inventory: { tags: ['InventoryNet'], category: 'Balance', ttm: 'last', ru: 'Запасы' },
+  inventory: { tags: ['InventoryNet', "FIFOInventoryAmount"], category: 'Balance', ttm: 'last', ru: 'Запасы' },
   prepaidexpenses: { tags: ['PrepaidExpenseCurrent', 'OtherAssetsCurrent'], category: 'Balance', ttm: 'last', ru: 'Предоплаченные расходы' },
   othercurrentassets: { tags: ['OtherAssetsCurrent'], category: 'Balance', ttm: 'last', ru: 'Прочие оборотные активы' },
   noncurrentassets: { tags: ['AssetsNoncurrent'], category: 'Balance', ttm: 'last', ru: 'Внеоборотные активы' },
