@@ -290,7 +290,6 @@ function getMetricValueInternal(factsData, metric, year, quarterParam, scale, ti
   
   let result = searchValueInAllTags(factsData, catalog, year, quarterParam, isBalanceMetric, ticker);
   
-  // ИСПРАВЛЕНИЕ: compute через рекурсивный вызов getMetricValueInternal
   if ((result === null || result === undefined) && catalog.compute && catalog.compute.length > 0) {
     common.log(`getMetricValueInternal: прямой поиск не дал результата, пробуем compute через рекурсию`);
     let computeResult = null;
@@ -376,7 +375,6 @@ function searchValueInAllTags(factsData, catalog, year, quarterParam, isBalanceM
     }
   }
   
-  // ИСПРАВЛЕНИЕ: compute через рекурсивный вызов getMetricValueInternal
   if (catalog.compute && catalog.compute.length > 0) {
     common.log(`searchValueInAllTags: переходим к compute через рекурсию`);
     let computeResult = null;
@@ -411,6 +409,78 @@ function searchValueInAllTags(factsData, catalog, year, quarterParam, isBalanceM
   return null;
 }
 
+// Вспомогательная функция: получить значение метрики для конкретного отчета
+// Возвращает объект с val, start, end, filed
+function getMetricValueForReport(factsData, catalog, report, ticker) {
+  // Пытаемся найти прямой тег
+  for (const tag of catalog.tags) {
+    const tagData = findTagData(factsData, [tag]);
+    if (!tagData) continue;
+    
+    const units = tagData.data.units;
+    const unitKey = Object.keys(units).find(k => k.includes('USD')) || 
+                    Object.keys(units).find(k => k.includes('shares')) ||
+                    Object.keys(units)[0];
+    const values = units[unitKey];
+    
+    if (!values) continue;
+    
+    // Ищем значение, у которого filingDate совпадает с датой отчета
+    const matchingValue = values.find(v => v.filed === report.filingDate);
+    if (matchingValue) {
+      common.log(`getMetricValueForReport: найден прямой тег ${tag} в отчете от ${report.filingDate}`);
+      return {
+        val: matchingValue.val,
+        start: matchingValue.start,
+        end: matchingValue.end,
+        filed: matchingValue.filed,
+        form: report.form
+      };
+    }
+  }
+  
+  // Если прямого тега нет, пробуем compute
+  if (catalog.compute && catalog.compute.length > 0) {
+    common.log(`getMetricValueForReport: прямого тега нет, пробуем compute для отчета от ${report.filingDate}`);
+    let computeResult = null;
+    let validCount = 0;
+    let computeStart = null;
+    let computeEnd = null;
+    
+    for (const computeAlias of catalog.compute) {
+      const subCatalog = catalogs.METRICS_CATALOG[computeAlias];
+      if (!subCatalog) continue;
+      
+      const valueObj = getMetricValueForReport(factsData, subCatalog, report, ticker);
+      if (valueObj !== null && valueObj.val !== null && valueObj.val !== undefined) {
+        if (catalog.operation === 'sum') {
+          if (computeResult === null) computeResult = 0;
+          computeResult += valueObj.val;
+        } else if (catalog.operation === 'subtract') {
+          if (computeResult === null) computeResult = valueObj.val;
+          else computeResult -= valueObj.val;
+        }
+        validCount++;
+        if (!computeStart) computeStart = valueObj.start;
+        if (!computeEnd) computeEnd = valueObj.end;
+      }
+    }
+    
+    if (validCount > 0 && computeResult !== null) {
+      common.log(`getMetricValueForReport: compute результат = ${computeResult}`);
+      return {
+        val: computeResult,
+        start: computeStart,
+        end: computeEnd,
+        filed: report.filingDate,
+        form: report.form
+      };
+    }
+  }
+  
+  return null;
+}
+
 function getTTMValue(factsData, submissionsData, metricName, scale, ticker) {
   const catalog = catalogs.METRICS_CATALOG[metricName];
   const ttmType = catalog?.ttm || 'sum';
@@ -433,7 +503,7 @@ function getTTMValue(factsData, submissionsData, metricName, scale, ticker) {
     const form = forms[i];
     const filingDate = filingDates[i];
     
-    // Пропускаем формы, которые не являются 10-K, 10-Q, 20-F, 40-F, 6-K
+    // Пропускаем формы, которые не содержат финансовой отчетности
     if (!['10-K', '10-Q', '20-F', '40-F', '6-K'].includes(form)) continue;
     
     allReports.push({
@@ -460,24 +530,100 @@ function getTTMValue(factsData, submissionsData, metricName, scale, ticker) {
   
   // 3. Определяем целевые отчеты для TTM
   let targetReports = [];
-  const latestForm = allReports[0].form;
+  const latestReport = allReports[0];
+  const latestForm = latestReport.form;
   
-  // Если последний отчет - годовой (10-K, 20-F, 40-F)
+  // Для годовых отчетов - берем один
   if (latestForm === '10-K' || latestForm === '20-F' || latestForm === '40-F') {
-    targetReports = [allReports[0]];
+    targetReports = [latestReport];
     common.log(`getTTMValue: последний отчет годовой (${latestForm}), берем его`);
   } 
-  // Если последний отчет - квартальный (10-Q, 6-K)
-  else if (latestForm === '10-Q' || latestForm === '6-K') {
-    let quarterlyCount = 0;
+  // Для 10-Q - всегда квартальный, берем 4 отчета
+  else if (latestForm === '10-Q') {
+    let count = 0;
     for (const report of allReports) {
       if (report.form === '10-Q' || report.form === '6-K') {
         targetReports.push(report);
-        quarterlyCount++;
-        if (quarterlyCount === 4) break;
+        count++;
+        if (count === 4) break;
       }
     }
-    common.log(`getTTMValue: последний отчет квартальный (${latestForm}), берем ${targetReports.length} квартальных отчетов`);
+    common.log(`getTTMValue: последний отчет 10-Q, берем ${targetReports.length} квартальных отчетов`);
+  }
+  // Для 6-K - определяем по длительности периода
+  else if (latestForm === '6-K') {
+    // Сначала нужно определить длительность этого отчета
+    // Берем любую метрику из каталога, чтобы получить start/end
+    let sampleMetric = null;
+    for (const tag of catalog.tags) {
+      const tagData = findTagData(factsData, [tag]);
+      if (tagData) {
+        const units = tagData.data.units;
+        const unitKey = Object.keys(units).find(k => k.includes('USD')) || Object.keys(units)[0];
+        const values = units[unitKey];
+        if (values && values.length > 0) {
+          const matchingValue = values.find(v => v.filed === latestReport.filingDate);
+          if (matchingValue) {
+            sampleMetric = matchingValue;
+            break;
+          }
+        }
+      }
+    }
+    
+    if (!sampleMetric) {
+      // Не удалось определить длительность, берем 4 отчета как запасной вариант
+      let count = 0;
+      for (const report of allReports) {
+        if (report.form === '6-K') {
+          targetReports.push(report);
+          count++;
+          if (count === 4) break;
+        }
+      }
+      common.log(`getTTMValue: 6-K, не удалось определить длительность, берем ${targetReports.length} отчетов`);
+    } else {
+      const duration = getDaysDifference(sampleMetric.start, sampleMetric.end);
+      
+      if (duration >= 350 && duration <= 370) {
+        // Годовой 6-K (редко)
+        targetReports = [latestReport];
+        common.log(`getTTMValue: 6-K с длительностью ${duration} дней (годовой), берем 1 отчет`);
+      } else if (duration >= 170 && duration <= 190) {
+        // Полугодовой 6-K - берем 2 отчета
+        let count = 0;
+        for (const report of allReports) {
+          if (report.form === '6-K') {
+            targetReports.push(report);
+            count++;
+            if (count === 2) break;
+          }
+        }
+        common.log(`getTTMValue: 6-K с длительностью ${duration} дней (полугодовой), берем ${targetReports.length} отчета`);
+      } else if (duration >= 80 && duration <= 100) {
+        // Квартальный 6-K - берем 4 отчета
+        let count = 0;
+        for (const report of allReports) {
+          if (report.form === '6-K') {
+            targetReports.push(report);
+            count++;
+            if (count === 4) break;
+          }
+        }
+        common.log(`getTTMValue: 6-K с длительностью ${duration} дней (квартальный), берем ${targetReports.length} отчетов`);
+      } else {
+        // Неизвестная длительность, берем 4 отчета
+        let count = 0;
+        for (const report of allReports) {
+          if (report.form === '6-K') {
+            targetReports.push(report);
+            count++;
+            if (count === 4) break;
+          }
+        }
+        common.log(`getTTMValue: 6-K с неизвестной длительностью ${duration} дней, берем ${targetReports.length} отчетов`);
+      }
+    }
   }
   
   if (targetReports.length === 0) {
@@ -485,19 +631,14 @@ function getTTMValue(factsData, submissionsData, metricName, scale, ticker) {
     return null;
   }
   
-  // 4. Для каждого целевого отчета получаем значение метрики
+  // 4. Для каждого целевого отчета получаем значение метрики (с start/end)
   const values = [];
   
   for (const report of targetReports) {
-    // Ищем значение метрики, соответствующее этому отчету
-    const value = getMetricValueForReport(factsData, catalog, report, ticker);
-    if (value !== null && value !== undefined) {
-      values.push({
-        val: value,
-        filingDate: report.filingDate,
-        form: report.form
-      });
-      common.log(`getTTMValue: отчет ${report.form} от ${report.filingDate} -> значение = ${value}`);
+    const valueObj = getMetricValueForReport(factsData, catalog, report, ticker);
+    if (valueObj !== null && valueObj.val !== null && valueObj.val !== undefined) {
+      values.push(valueObj);
+      common.log(`getTTMValue: отчет ${report.form} от ${report.filingDate} -> значение = ${valueObj.val}, период: ${valueObj.start} - ${valueObj.end}`);
     } else {
       common.log(`getTTMValue: отчет ${report.form} от ${report.filingDate} -> значение не найдено`);
     }
@@ -515,68 +656,69 @@ function getTTMValue(factsData, submissionsData, metricName, scale, ticker) {
     return common.applyScale(result, scale);
   }
   
-  // 6. Для отчетных метрик (ttmType === 'sum') - суммируем
+  // 6. Для отчетных метрик (ttmType === 'sum')
+  // Проверяем, полугодовой ли это отчет
+  const firstValue = values[0];
+  const duration = getDaysDifference(firstValue.start, firstValue.end);
+  
+  // Полугодовой отчет (duration ~180 дней)
+  if (duration >= 170 && duration <= 190 && values.length === 1) {
+    // Нужно вычислить TTM: текущее полугодие + (годовой прошлого года - полугодовой прошлого года)
+    common.log(`getTTMValue: полугодовой отчет, вычисляем TTM по формуле`);
+    
+    // Находим годовой отчет за прошлый год
+    const currentHalfYear = values[0].val;
+    const currentYear = parseInt(firstValue.end.substring(0, 4));
+    const prevYear = currentYear - 1;
+    
+    // Ищем годовой отчет за прошлый год
+    let lastFullYearValue = null;
+    let prevHalfYearValue = null;
+    
+    // Проходим по всем отчетам, чтобы найти годовой и полугодовой за прошлый год
+    for (const report of allReports) {
+      const valueObj = getMetricValueForReport(factsData, catalog, report, ticker);
+      if (valueObj && valueObj.val !== null && valueObj.val !== undefined) {
+        const reportDuration = getDaysDifference(valueObj.start, valueObj.end);
+        const reportYear = parseInt(valueObj.end.substring(0, 4));
+        
+        // Годовой отчет
+        if (reportDuration >= 350 && reportDuration <= 370 && reportYear === prevYear) {
+          lastFullYearValue = valueObj.val;
+          common.log(`getTTMValue: найден годовой отчет за ${prevYear}: ${lastFullYearValue}`);
+        }
+        
+        // Полугодовой отчет за тот же период прошлого года
+        if (reportDuration >= 170 && reportDuration <= 190 && reportYear === prevYear) {
+          // Проверяем, что это тот же период (начало и конец должны совпадать по месяцу)
+          const currentStartMonth = parseInt(firstValue.start.substring(5, 7));
+          const reportStartMonth = parseInt(valueObj.start.substring(5, 7));
+          if (currentStartMonth === reportStartMonth) {
+            prevHalfYearValue = valueObj.val;
+            common.log(`getTTMValue: найден полугодовой отчет за ${prevYear} (тот же период): ${prevHalfYearValue}`);
+          }
+        }
+      }
+    }
+    
+    if (lastFullYearValue !== null && prevHalfYearValue !== null) {
+      const result = currentHalfYear + (lastFullYearValue - prevHalfYearValue);
+      common.log(`getTTMValue: полугодовой TTM = ${currentHalfYear} + (${lastFullYearValue} - ${prevHalfYearValue}) = ${result}`);
+      return common.applyScale(result, scale);
+    } else {
+      common.log(`getTTMValue: не удалось найти данные для расчета полугодового TTM`);
+      // Fallback: просто берем текущее значение
+      return common.applyScale(currentHalfYear, scale);
+    }
+  }
+  
+  // Обычное суммирование (для квартальных отчетов)
   let sum = 0;
   for (const v of values) {
     sum += v.val;
   }
   common.log(`getTTMValue: сумма по ${values.length} отчетам = ${sum}`);
   return common.applyScale(sum, scale);
-}
-
-// Вспомогательная функция: получить значение метрики для конкретного отчета
-function getMetricValueForReport(factsData, catalog, report, ticker) {
-  // Пытаемся найти прямой тег
-  for (const tag of catalog.tags) {
-    const tagData = findTagData(factsData, [tag]);
-    if (!tagData) continue;
-    
-    const units = tagData.data.units;
-    const unitKey = Object.keys(units).find(k => k.includes('USD')) || 
-                    Object.keys(units).find(k => k.includes('shares')) ||
-                    Object.keys(units)[0];
-    const values = units[unitKey];
-    
-    if (!values) continue;
-    
-    // Ищем значение, у которого filingDate совпадает с датой отчета
-    const matchingValue = values.find(v => v.filed === report.filingDate);
-    if (matchingValue) {
-      common.log(`getMetricValueForReport: найден прямой тег ${tag} в отчете от ${report.filingDate}`);
-      return matchingValue.val;
-    }
-  }
-  
-  // Если прямого тега нет, пробуем compute
-  if (catalog.compute && catalog.compute.length > 0) {
-    common.log(`getMetricValueForReport: прямого тега нет, пробуем compute для отчета от ${report.filingDate}`);
-    let computeResult = null;
-    let validCount = 0;
-    
-    for (const computeAlias of catalog.compute) {
-      const subCatalog = catalogs.METRICS_CATALOG[computeAlias];
-      if (!subCatalog) continue;
-      
-      const value = getMetricValueForReport(factsData, subCatalog, report, ticker);
-      if (value !== null && value !== undefined) {
-        if (catalog.operation === 'sum') {
-          if (computeResult === null) computeResult = 0;
-          computeResult += value;
-        } else if (catalog.operation === 'subtract') {
-          if (computeResult === null) computeResult = value;
-          else computeResult -= value;
-        }
-        validCount++;
-      }
-    }
-    
-    if (validCount > 0 && computeResult !== null) {
-      common.log(`getMetricValueForReport: compute результат = ${computeResult}`);
-      return computeResult;
-    }
-  }
-  
-  return null;
 }
 
 // ============ 4. ОСНОВНАЯ ПУБЛИЧНАЯ ФУНКЦИЯ ==========
